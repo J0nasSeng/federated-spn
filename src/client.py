@@ -35,6 +35,7 @@ def main(dataset, num_clients, client_id, device):
             """
                 Get SPN parameters
             """
+            return [val.cpu().numpy() for _, val in self.einet.state_dict().items()]
 
         def fit(self, parameters, cfg):
             """
@@ -43,6 +44,24 @@ def main(dataset, num_clients, client_id, device):
             self.einet = train(self.einet, self.train_loader, config.num_epochs, config.device)
 
             # collect parameters and send back to server
+            params = self.get_parameters()
+            return params, len(train_data), {}
+        
+        def evaluate(self, parameters, cfg):
+            """
+                Evaluate the local SPN or global SPN (depending on what's sent by server)
+            """
+            eval_local = cfg['eval']['eval_local']
+            if eval_local:
+                # evaluate local SPN
+                ll = test(self.einet, self.train_loader)
+                return ll, len(train_data), {'log-likelihood': ll}
+            else:
+                # build and evaluate global SPN
+                # TODO: Implement this!
+                return
+    # Start client
+    fl.client.start_numpy_client("[::]:{}".format(config.port), client=SPNClient())
 
 def make_spn(device):
     """
@@ -103,3 +122,13 @@ def train(einet, train_loader, num_epochs, device):
 
         einet.em_update()
     return einet
+
+def test(einet, data):
+    """Computes log-likelihood in batched way."""
+    with torch.no_grad():
+        ll_total = 0.0
+        for x, batch_labels in data:
+            outputs = einet(x)
+            ll_sample = EinsumNetwork.log_likelihoods(outputs, batch_labels)
+            ll_total += ll_sample.sum().item()
+        return ll_total

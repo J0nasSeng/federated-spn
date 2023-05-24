@@ -43,3 +43,9 @@ device = torch.device('cuda:0')
 
 dataset_inds_file = ''
 data_skew = 0.0
+
+# Server config
+communication_rounds = 10
+
+# Client config
+port = '8070'
