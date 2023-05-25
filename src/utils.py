@@ -3,6 +3,10 @@ import os
 import torch
 import errno
 from PIL import Image
+import networkx as nx
+from einsum import EinsumNetwork, Graph
+from collections import OrderedDict
+from numproto import proto_to_ndarray, ndarray_to_proto
 
 
 def mkdir_p(path):
@@ -57,3 +61,27 @@ def sample_matrix_categorical(p):
         rand = torch.rand((cp.shape[0], 1), device=cp.device)
         rand_idx = torch.sum(rand > cp, -1).long()
         return rand_idx
+    
+class ProtobufNumpyArray:
+    """
+        Class needed to deserialize numpy-arrays coming from flower
+    """
+    def __init__(self, bytes) -> None:
+        self.ndarray = bytes
+
+def flwr_params_to_numpy(params):
+    meta_info = params.tensors[-1]
+    adj = params.tensors[-2]
+    parameter_bytes = params.tensors[:-2]
+    pnpa_meta = ProtobufNumpyArray(meta_info)
+    pnpa_adj = ProtobufNumpyArray(adj)
+
+    meta_info = proto_to_ndarray(pnpa_meta)
+    adj = proto_to_ndarray(pnpa_adj)
+    
+    parameters = []
+    for p in parameter_bytes:
+        param_bytes = ProtobufNumpyArray(p)
+        parameters.append(proto_to_ndarray(param_bytes))
+
+    return parameters, adj, meta_info

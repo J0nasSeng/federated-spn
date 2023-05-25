@@ -280,12 +280,18 @@ def eval_accuracy_batched(einet, x, labels, batch_size):
         return (n_correct.float() / x.shape[0]).item()
 
 
-def eval_loglikelihood_batched(einet, data):
+def eval_loglikelihood_batched(einet, x, labels=None, batch_size=100):
     """Computes log-likelihood in batched way."""
     with torch.no_grad():
+        idx_batches = torch.arange(0, x.shape[0], dtype=torch.int64, device=x.device).split(batch_size)
         ll_total = 0.0
-        for x, batch_labels in data:
-            outputs = einet(x)
+        for batch_count, idx in enumerate(idx_batches):
+            batch_x = x[idx, :]
+            if labels is not None:
+                batch_labels = labels[idx]
+            else:
+                batch_labels = None
+            outputs = einet(batch_x)
             ll_sample = log_likelihoods(outputs, batch_labels)
             ll_total += ll_sample.sum().item()
         return ll_total

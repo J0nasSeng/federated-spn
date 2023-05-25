@@ -39,13 +39,13 @@ batch_size = 100
 online_em_frequency = 1
 online_em_stepsize = 0.05
 
-device = torch.device('cuda:0')
+device = torch.device('cpu')
 
-dataset_inds_file = ''
+dataset_inds_file = 'indices.json'
 data_skew = 0.0
 
 # Server config
 communication_rounds = 10
 
 # Client config
-port = '8070'
+port = '8080'

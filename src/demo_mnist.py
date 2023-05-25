@@ -111,7 +111,8 @@ args = EinsumNetwork.Args(
 einet = EinsumNetwork.EinsumNetwork(graph, args)
 einet.initialize()
 einet.to(device)
-print(einet)
+param_names = [(p[0], p[1].shape) for p in einet.named_parameters() if p[1].requires_grad == True]
+print(param_names)
 
 # Train
 ######################################
