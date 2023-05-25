@@ -12,8 +12,7 @@ from flwr.common import (
     NDArrays,
     Parameters,
     Scalar,
-    ndarrays_to_parameters,
-    parameters_to_ndarrays,
+    ndarrays_to_parameters
 )
 from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy
@@ -69,7 +68,7 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
         spns = [make_spn(param) for param, _ in results]
         self.global_einet = make_global_spn(spns)
         spn_params = spn_to_param_list(self.global_einet)
-        return spn_params, {}
+        return ndarrays_to_parameters(spn_params), {}
     
     def evaluate(self, server_round, parameters):
         return 0, {}
@@ -140,8 +139,12 @@ def make_global_spn(spns: List[EinsumNetwork.EinsumNetwork]):
         online_em_stepsize=config.online_em_stepsize)
     
     einet = EinsumNetwork.EinsumNetwork(new_graph, args)
-    param_names = [(p[0], p[1].shape) for p in einet.named_parameters() if p[1].requires_grad == True]
-    print(param_names)
+    # TODO: replace initialize with setting the correct client parameters.
+    #   still not clear how to do (especially in the first layer)
+    einet.initialize()
+    for p in einet.parameters():
+        print(p.shape)
+    return einet
 
 def merge_graphs(spns: List[EinsumNetwork.EinsumNetwork]):
     """
@@ -150,22 +153,21 @@ def merge_graphs(spns: List[EinsumNetwork.EinsumNetwork]):
     """
     graphs = [spn.graph for spn in spns]
     merged = graphs[0]
-    old_root = merged.nodes[0]
-    scope = old_root.scope
-    new_root = Graph.DistributionVector(scope)
-    merged.add_node(new_root)
-    merged.add_edge(new_root, old_root)
+    nodes = list(merged.nodes)
+    root = nodes[0]
     for g in graphs[1:]:
-        # remember last index of current node list
-        last_idx = len(merged.nodes) - 1
+        # remember all successors of g's root
+        groot = list(g.nodes)[0]
+        groot_succ = g.successors(groot)
         # add all nodes and edges from g to merged
-        merged.add_nodes_from(g.nodes)
-        merged.add_edges_from(g.edges)
+        g_nodes = list(g.nodes)[1:] # all except root
+        merged.add_nodes_from(g_nodes)
+        g_edges = [(n1, n2) for n1, n2 in g.edges if n1 != groot]
+        merged.add_edges_from(g_edges)
 
-        # connect old root with new root
-        nodes = list(merged.nodes)
-        old_root = merged.nodes[last_idx+1]
-        merged.add_edge(new_root, old_root)
+        # connect root with successors of g's root (g's root gets dropped)
+        for succ in groot_succ:
+            merged.add_edge(root, succ)
     
     return merged
 
@@ -235,17 +237,29 @@ def spn_to_param_list(einet: EinsumNetwork.EinsumNetwork):
 
     adj = nx.convert_matrix.to_numpy_array(einet.graph)
     node_meta_info = []
+    max_scope_len = 0
     for node in einet.graph.nodes:
+        if len(node.scope) > max_scope_len:
+            max_scope_len = len(node.scope)
         if type(node) == Graph.Product:
-            node_meta_info.append([0, list(node.scope)])
+            node_meta_info.append([0] + list(node.scope))
         elif type(node) == Graph.DistributionVector and len(list(einet.graph.successors(node))) == 0:
-            node_meta_info.append([1, node.scope])
+            node_meta_info.append([1] + list(node.scope))
         else:
-            node_meta_info.append([2, node.scope])
+            node_meta_info.append([2] + list(node.scope))
+    
+    # pad lists s.t. np.array works
+    for idx in range(len(node_meta_info)):
+        info = node_meta_info[idx]
+        scope = info[1:]
+        padding_len = max_scope_len - len(scope)
+        if padding_len > 0:
+            scope += [-1]*padding_len
+        node_meta_info[idx] = [info[0]] + scope
         
-    parameters = [val.cpu().numpy() for _, val in einet.state_dict().items()]
+    parameters = [p.cpu().detach().numpy() for p in einet.parameters() if p.requires_grad]
 
-    return [adj, node_meta_info, parameters]
+    return parameters + [adj] + [np.array(node_meta_info)]
 
 def main():
 

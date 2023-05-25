@@ -9,6 +9,7 @@ from collections import OrderedDict
 import networkx as nx
 import argparse
 import numpy as np
+from utils import flwr_params_to_numpy
 
 def main(dataset, num_clients, client_id, device):
 
@@ -29,6 +30,8 @@ def main(dataset, num_clients, client_id, device):
             self.train_loader = DataLoader(train_data, config.batch_size, True)
             self.val_loader = DataLoader(val_data, config.batch_size, True)
             self.einet = init_spn(device)
+            for p in self.einet.parameters():
+                print(p.shape)
 
         def set_parameters(self, parameters):
             """
@@ -131,25 +134,32 @@ def make_spn(params):
         params: List containing a description of the structure in form of
             a list of lists (=param[0]) and the SPN's parameters (=params[1])
     """
-    adj, meta_info, parameters = params
+    parameters, adj, meta_info = flwr_params_to_numpy(params)
 
     # 0 = Product node, 1 = Leaf node, 2 = Sum node
     graph = nx.DiGraph()
 
     # reconstruct graph based on adjacency, node-types and scopes
     # passed by client
-    for node_type, scope in meta_info:
+    for info in meta_info:
+        node_type = info[0]
+        info = info[1:]
+        scope = list(info[info != -1])
         if node_type == 0:
             node = Graph.Product(scope)
         else:
             node = Graph.DistributionVector(scope)
         graph.add_node(node)
-    
-    for row in adj:
-        for col in row:
+
+    nodes = list(graph.nodes)
+    for row in range(adj.shape[0]):
+        for col in range(adj.shape[0]):
             if adj[row, col] == 1:
-                src, dst = graph.nodes[row], graph.nodes[col]
+                src, dst = nodes[row], nodes[col]
                 graph.add_edge(src, dst)
+
+    for node in Graph.get_leaves(graph):
+        node.einet_address.replica_idx = 0
     
     args = EinsumNetwork.Args(
         num_var=config.num_vars,
@@ -164,11 +174,15 @@ def make_spn(params):
 
     # create einsum object and set parameters as sent by client
     einet = EinsumNetwork.EinsumNetwork(graph, args)
-    param_dict = zip(einet.state_dict().keys(), parameters)
-    state_dict = OrderedDict({k: torch.tensor(v) for k, v in param_dict})
-    einet.load_state_dict(state_dict, strict=True)
-    return einet
+    # first initialize (relveant to fill buffers)
+    einet.initialize()
+    # set all parameters requiring gradient
+    with torch.no_grad():
+        for eparam, param in zip(einet.parameters(), parameters):
+            if eparam.requires_grad:
+                eparam.copy_(torch.tensor(param))
 
+    return einet
 
 def spn_to_param_list(einet: EinsumNetwork.EinsumNetwork):
     """
