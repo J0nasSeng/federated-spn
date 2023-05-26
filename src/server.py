@@ -57,7 +57,6 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
         failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]],
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
         """Aggregate fit results using weighted average."""
-        print(failures)
 
         results = [
             (fit_res.parameters, fit_res.num_examples)
@@ -139,11 +138,45 @@ def make_global_spn(spns: List[EinsumNetwork.EinsumNetwork]):
         online_em_stepsize=config.online_em_stepsize)
     
     einet = EinsumNetwork.EinsumNetwork(new_graph, args)
-    # TODO: replace initialize with setting the correct client parameters.
-    #   still not clear how to do (especially in the first layer)
+    # first initialize einet (important to fill buffers)
     einet.initialize()
-    for p in einet.parameters():
-        print(p.shape)
+    with torch.no_grad():
+        # for each spn sent by clients
+        for idx, spn in enumerate(spns):
+            # go through all layers of the SPN
+            for gl, cl in zip(einet.einet_layers, spn.einet_layers):
+                # concat parameter tensors (we simply extend the SPN)
+                if type(gl) == EinsumNetwork.EinsumLayer:
+                    cparams = list(cl.parameters())[0]
+                    gparams = list(gl.parameters())[0]
+                    start_idx = idx * cparams.shape[-1]
+                    end_idx = start_idx + cparams.shape[-1]
+                    gparams.data[:,:,:,start_idx:end_idx] = cparams.data
+                elif type(gl) == EinsumNetwork.EinsumMixingLayer:
+                    cparams = list(cl.parameters())[0]
+                    gparams = list(gl.parameters())[0]
+                    if cparams.shape[1] != gparams.shape[1]:
+                        start_idx = idx * cparams.shape[1]
+                        end_idx = start_idx + cparams.shape[1]
+                        gparams.data[:,start_idx:end_idx,:] = cparams.data
+                    elif cparams.shape[-1] != gparams.shape[-1]:
+                        start_idx = idx * cparams.shape[-1]
+                        end_idx = start_idx + cparams.shape[-1]
+                        gparams.data[:,:,start_idx:end_idx] = cparams.data
+                # add parameters values
+                # TODO: Check if sampling works if we simply set the parameters of a random client model
+                elif type(gl) == EinsumNetwork.FactorizedLeafLayer:
+                    cparams = list(cl.parameters())[0]
+                    gparams = list(gl.parameters())[0]
+                    gparams.copy_(gparams + cparams)
+        # for the factorized leaf layer: divide by number of spns sent
+        # to obtain mean of parameters
+        # TODO: What if not all clients send a model? Still average this way?
+        for layer in einet.einet_layers:
+            if type(layer) == EinsumNetwork.FactorizedLeafLayer:
+                params = list(gl.parameters())[0]
+                params.copy_(params.data / len(spns))
+
     return einet
 
 def merge_graphs(spns: List[EinsumNetwork.EinsumNetwork]):

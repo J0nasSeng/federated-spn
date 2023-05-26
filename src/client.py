@@ -9,7 +9,9 @@ from collections import OrderedDict
 import networkx as nx
 import argparse
 import numpy as np
-from utils import flwr_params_to_numpy
+from utils import flwr_params_to_numpy, save_image_stack
+import os
+import matplotlib.pyplot as plt
 
 def main(dataset, num_clients, client_id, device):
 
@@ -30,8 +32,6 @@ def main(dataset, num_clients, client_id, device):
             self.train_loader = DataLoader(train_data, config.batch_size, True)
             self.val_loader = DataLoader(val_data, config.batch_size, True)
             self.einet = init_spn(device)
-            for p in self.einet.parameters():
-                print(p.shape)
 
         def set_parameters(self, parameters):
             """
@@ -45,7 +45,7 @@ def main(dataset, num_clients, client_id, device):
             """
                 Fit SPN and send parameters to server
             """
-            #self.einet = train(self.einet, self.train_loader, config.num_epochs, device)
+            self.einet = train(self.einet, self.train_loader, config.num_epochs, device)
 
             # collect parameters and send back to server
             params = self.get_parameters()
@@ -55,15 +55,14 @@ def main(dataset, num_clients, client_id, device):
             """
                 Evaluate the local SPN or global SPN (depending on what's sent by server)
             """
-            eval_local = cfg['eval']['eval_local']
-            if eval_local:
-                # evaluate local SPN
-                ll = test(self.einet, self.train_loader)
-                return ll, len(train_data), {'log-likelihood': ll}
-            else:
-                # build and evaluate global SPN
-                # TODO: Implement this!
-                return
+            einet = make_spn(parameters)
+            # TODO: what to evaluate here?
+            # for now, just save model
+            samples = einet.sample(num_samples=25).cpu().numpy()
+            samples = samples.reshape((-1, 28, 28))
+            save_image_stack(samples, 5, 5, os.path.join('../samples/demo_mnist/', "samples.png"), margin_gray_val=0.)
+            torch.save(einet, './model.pt')
+
     # Start client
     fl.client.start_numpy_client(server_address="[::]:{}".format(config.port), client=SPNClient())
 
@@ -134,7 +133,8 @@ def make_spn(params):
         params: List containing a description of the structure in form of
             a list of lists (=param[0]) and the SPN's parameters (=params[1])
     """
-    parameters, adj, meta_info = flwr_params_to_numpy(params)
+    adj, meta_info = params[-2], params[-1]
+    parameters = params[:-2]
 
     # 0 = Product node, 1 = Leaf node, 2 = Sum node
     graph = nx.DiGraph()

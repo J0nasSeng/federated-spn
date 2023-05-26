@@ -1,3 +1,6 @@
 data/
 __pycache__/
 indices.json
+model.pt
+models/
+samples/

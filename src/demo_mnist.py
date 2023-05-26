@@ -226,7 +226,7 @@ test_ll_before = EinsumNetwork.eval_loglikelihood_batched(einet, test_x, batch_s
 
 # save model
 graph_file = os.path.join(model_dir, "einet.pc")
-Graph.write_gpickle(graph, graph_file)
+#Graph.write_gpickle(graph, graph_file)
 print("Saved PC graph to {}".format(graph_file))
 model_file = os.path.join(model_dir, "einet.mdl")
 torch.save(einet, model_file)
