@@ -32,6 +32,10 @@ def main(dataset, num_clients, client_id, device):
             self.train_loader = DataLoader(train_data, config.batch_size, True)
             self.val_loader = DataLoader(val_data, config.batch_size, True)
             self.einet = init_spn(device)
+            for layer in self.einet.einet_layers:
+                params = list(layer.parameters())[0]
+                print(layer)
+                print(params.shape)
 
         def set_parameters(self, parameters):
             """
@@ -45,7 +49,7 @@ def main(dataset, num_clients, client_id, device):
             """
                 Fit SPN and send parameters to server
             """
-            self.einet = train(self.einet, self.train_loader, config.num_epochs, device)
+            #self.einet = train(self.einet, self.train_loader, config.num_epochs, device)
 
             # collect parameters and send back to server
             params = self.get_parameters()

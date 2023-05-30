@@ -2,6 +2,7 @@ import numpy as np
 import networkx as nx
 from itertools import count
 import networkx as nx
+import matplotlib.pyplot as plt
 
 
 class EiNetAddress:
@@ -537,6 +538,37 @@ def poon_domingos_structure(shape, delta, axes=None, max_split_depth=None):
 
     return graph
 
+def flat_leaf_spn(shape, num_subcubes=2):
+    assert len(shape) == 2, 'only supports 2d-inputs'
+    assert shape[0] == shape[1], 'only supports squared inputs'
+    assert shape[0] % num_subcubes == 0, 'square input must be divisable by num_subcubes'
+    assert int(np.log2(shape[0])) == np.log2(shape[0]), 'shape must be power of 2, e.g. 2, 4, 8, ...'
+
+    hypercube_to_scope = HypercubeToScopeCache()
+    hypercube = ((0,) * len(shape), shape)
+    hypercube_scope = hypercube_to_scope(hypercube, shape)
+
+    graph = nx.DiGraph()
+    root = DistributionVector(hypercube_scope)
+    graph.add_node(root)
+
+    depth = np.log2(shape[0])
+    curr_len = shape[0]
+    num_hypercubes = 1
+    for d in range(depth):
+        # go bottom up
+        pass
+
+
+def quarter_hypercube(hc):
+    c1, c2 = hc
+    pos = int((c1[0] - c2[0]) / 2)
+    left, right = cut_hypercube(hc, 0, pos)
+    left_upper, left_bottom = cut_hypercube(left, 1, pos)
+    right_upper, right_bottom = cut_hypercube(right, 1, pos)
+
+    return left_upper, left_bottom, right_upper, right_bottom    
+    
 
 def topological_layers(graph):
     """
@@ -589,6 +621,7 @@ def plot_graph(graph):
     nx.draw_networkx_nodes(graph, pos, distributions, node_shape='p')
     nx.draw_networkx_nodes(graph, pos, products, node_shape='^')
     nx.draw_networkx_edges(graph, pos, node_size=node_sizes, arrowstyle='->', arrowsize=10, width=2)
+    plt.show()
 
 
 # run to see some usage examples

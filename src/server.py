@@ -21,7 +21,9 @@ from einsum import EinsumNetwork, Graph
 import networkx as nx
 from datasets import get_dataset_loader
 import numpy as np
-from utils import flwr_params_to_numpy
+from utils import flwr_params_to_numpy, save_image_stack, mkdir_p
+import os
+import networkx as nx
 
 class FedSPNStrategy(fl.server.strategy.Strategy):
 
@@ -131,12 +133,13 @@ def make_global_spn(spns: List[EinsumNetwork.EinsumNetwork]):
         num_dims=1,
         num_classes=1,
         num_sums=config.K,
-        num_input_distributions=config.K,
+        num_input_distributions=config.K*len(spns),
         exponential_family=config.exponential_family,
         exponential_family_args=config.exponential_family_args,
         online_em_frequency=config.online_em_frequency,
         online_em_stepsize=config.online_em_stepsize)
     
+    #Graph.plot_graph(new_graph)
     einet = EinsumNetwork.EinsumNetwork(new_graph, args)
     # first initialize einet (important to fill buffers)
     einet.initialize()
@@ -168,15 +171,15 @@ def make_global_spn(spns: List[EinsumNetwork.EinsumNetwork]):
                 elif type(gl) == EinsumNetwork.FactorizedLeafLayer:
                     cparams = list(cl.parameters())[0]
                     gparams = list(gl.parameters())[0]
-                    gparams.copy_(gparams + cparams)
+                    gparams.copy_(cparams)
         # for the factorized leaf layer: divide by number of spns sent
         # to obtain mean of parameters
         # TODO: What if not all clients send a model? Still average this way?
-        for layer in einet.einet_layers:
-            if type(layer) == EinsumNetwork.FactorizedLeafLayer:
-                params = list(gl.parameters())[0]
-                params.copy_(params.data / len(spns))
-
+        #for layer in einet.einet_layers:
+        #    if type(layer) == EinsumNetwork.FactorizedLeafLayer:
+        #        params = list(gl.parameters())[0]
+        #        params.copy_(params.data / len(spns))
+#
     return einet
 
 def merge_graphs(spns: List[EinsumNetwork.EinsumNetwork]):
