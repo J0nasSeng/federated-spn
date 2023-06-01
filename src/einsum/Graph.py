@@ -290,6 +290,9 @@ def cut_hypercube(hypercube, axis, pos):
     :return: coordinates of the two hypercubes
     """
     if pos <= hypercube[0][axis] or pos >= hypercube[1][axis]:
+        print(hypercube)
+        print(pos)
+        print(axis)
         raise AssertionError
 
     coord_rigth = list(hypercube[1])
@@ -538,10 +541,9 @@ def poon_domingos_structure(shape, delta, axes=None, max_split_depth=None):
 
     return graph
 
-def flat_leaf_spn(shape, num_subcubes=2):
+def binary_tree_spn(shape):
     assert len(shape) == 2, 'only supports 2d-inputs'
     assert shape[0] == shape[1], 'only supports squared inputs'
-    assert shape[0] % num_subcubes == 0, 'square input must be divisable by num_subcubes'
     assert int(np.log2(shape[0])) == np.log2(shape[0]), 'shape must be power of 2, e.g. 2, 4, 8, ...'
 
     hypercube_to_scope = HypercubeToScopeCache()
@@ -552,22 +554,60 @@ def flat_leaf_spn(shape, num_subcubes=2):
     root = DistributionVector(hypercube_scope)
     graph.add_node(root)
 
-    depth = np.log2(shape[0])
-    curr_len = shape[0]
-    num_hypercubes = 1
-    for d in range(depth):
-        # go bottom up
-        pass
+    def build_tree(graph, hypercubes, depth, axis):
+        """
+            Build a binary tree SPN which has all leaf nodes in same layer.
+            This is currently required as the Einsum-network does not support sum/leaf nodes
+            in the same layer with different number of distributions specified. 
+            This, however is necessary for the federated implementation of SPNs as 
+            we have to concatenate the SPNs learned on different clients.
+            If we restrict the structure to binary trees with all leafs being on the same layer,
+            we circumevent this issue.
+            NOTE: This comes at some cost: The SPN's depth increases exponentially now as the input
+                size increases. Also, we only support squared input where the shape has to be 
+                a tuple of 2^x-terms, e.g. an MNIST image now must be of shape (2^5, 2^5) = (32, 32).
+        """
 
+        curr_leafs = [node for node in graph.nodes if len(list(graph.successors(node))) == 0]
+        assert len(curr_leafs) == len(hypercubes), 'Error. Leaf number different than scope number'
 
-def quarter_hypercube(hc):
-    c1, c2 = hc
-    pos = int((c1[0] - c2[0]) / 2)
-    left, right = cut_hypercube(hc, 0, pos)
-    left_upper, left_bottom = cut_hypercube(left, 1, pos)
-    right_upper, right_bottom = cut_hypercube(right, 1, pos)
+        # compute hamming distance between vectors describing hypercube
+        hypercube_lens = [sum([r[0] - l[0], r[1] - l[1]]) for l, r in hypercubes]
+        # if the hamming distance is 2, there is nothing we can split -> return graph
+        # example: assume hypercube ((0, 0), (1, 1)). This already describes one pixel, i.e. nothing to split
+        #   hamming distance = (1 - 0) + (1 - 0) = 2
+        # As we assume square sized input and we always split input into two halves,
+        # this condition holds iff we have reached the leaf node layer
+        if all([l == 2 for l in hypercube_lens]):
+            return graph
 
-    return left_upper, left_bottom, right_upper, right_bottom    
+        new_hypercubes = []
+        if depth % 2 == 0:
+            # scope of product = scope of its parent sum
+            for hc, node in zip(hypercubes, curr_leafs):
+                prod_left = Product(node.scope)
+                prod_right = Product(node.scope)
+                graph.add_edge(node, prod_left)
+                graph.add_edge(node, prod_right)
+                new_hypercubes += [hc, hc] # add same hypercube twice as we have two product nodes
+            new_ax = axis
+        else:
+            for node, hc in zip(curr_leafs, hypercubes):
+                pos = (hc[1][axis] + hc[0][axis]) / 2
+                hc_left, hc_right = cut_hypercube(hc, axis, int(pos))
+                new_hypercubes += [hc_left, hc_right]
+                s1, s2 = hypercube_to_scope(hc_left, shape), hypercube_to_scope(hc_right, shape)
+                sol_left, sol_right = DistributionVector(s1), DistributionVector(s2)
+                sol_left.einet_address.replica_idx = 0
+                sol_right.einet_address.replica_idx = 0
+                graph.add_edge(node, sol_left)
+                graph.add_edge(node, sol_right)
+            new_ax = (axis + 1) % 2
+
+        return build_tree(graph, new_hypercubes, depth+1, new_ax)
+    
+    graph = build_tree(graph, [hypercube], 0, 0)
+    return graph   
     
 
 def topological_layers(graph):

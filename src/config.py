@@ -19,15 +19,15 @@ classes = [7]
 
 K = 10
 
-structure = 'poon-domingos'
+structure = 'flat-binary-tree'
 # structure = 'binary-trees'
 
 # 'poon-domingos'
 pd_num_pieces = [4]
 # pd_num_pieces = [7]
 # pd_num_pieces = [7, 28]
-width = 28
-height = 28
+width = 8
+height = 8
 num_vars = width*height
 
 # 'binary-trees'

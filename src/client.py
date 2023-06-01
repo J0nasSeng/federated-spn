@@ -68,7 +68,8 @@ def main(dataset, num_clients, client_id, device):
             torch.save(einet, './model.pt')
 
     # Start client
-    fl.client.start_numpy_client(server_address="[::]:{}".format(config.port), client=SPNClient())
+    fl.client.start_numpy_client(server_address="[::]:{}".format(config.port), client=SPNClient(),
+                                 grpc_max_message_length=562028236)
 
 def init_spn(device):
     """
@@ -87,6 +88,8 @@ def init_spn(device):
         graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=pd_delta)
     elif config.structure == 'binary-trees':
         graph = Graph.random_binary_trees(num_var=config.num_vars, depth=config.depth, num_repetitions=config.num_repetitions)
+    elif config.structure == 'flat-binary-tree':
+        graph = Graph.binary_tree_spn(shape=(config.height, config.width))
     else:
         raise AssertionError("Unknown Structure")
 

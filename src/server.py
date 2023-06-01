@@ -59,7 +59,7 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
         failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]],
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
         """Aggregate fit results using weighted average."""
-
+        print(failures)
         results = [
             (fit_res.parameters, fit_res.num_examples)
             for _, fit_res in results
@@ -143,6 +143,10 @@ def make_global_spn(spns: List[EinsumNetwork.EinsumNetwork]):
     einet = EinsumNetwork.EinsumNetwork(new_graph, args)
     # first initialize einet (important to fill buffers)
     einet.initialize()
+    for l in einet.einet_layers:
+        print(l)
+        p = list(l.parameters())[0]
+        print(p.shape)
     with torch.no_grad():
         # for each spn sent by clients
         for idx, spn in enumerate(spns):
@@ -171,7 +175,9 @@ def make_global_spn(spns: List[EinsumNetwork.EinsumNetwork]):
                 elif type(gl) == EinsumNetwork.FactorizedLeafLayer:
                     cparams = list(cl.parameters())[0]
                     gparams = list(gl.parameters())[0]
-                    gparams.copy_(cparams)
+                    start_idx = idx * cparams.shape[1]
+                    end_idx = start_idx + cparams.shape[1]
+                    gparams[:, start_idx:end_idx,:,:] = cparams
         # for the factorized leaf layer: divide by number of spns sent
         # to obtain mean of parameters
         # TODO: What if not all clients send a model? Still average this way?
@@ -313,6 +319,7 @@ def main():
         server_address=f"[::]:{config.port}",
         config=fl.server.ServerConfig(num_rounds=config.communication_rounds),
         strategy=strategy,
+        grpc_max_message_length=562028236
     )
 
 
