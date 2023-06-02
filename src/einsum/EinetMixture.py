@@ -28,7 +28,7 @@ class EinetMixture:
         self.num_dims = list(num_dims)[0]
 
     def sample(self, N, **kwargs):
-        samples = np.zeros((N, self.num_var, self.num_dims))
+        samples = np.zeros((N, self.num_dims, self.num_var))
         for k in range(N):
             rand_idx = np.sum(np.random.rand() > np.cumsum(self.p[0:-1]))
             samples[k, ...] = self.einets[rand_idx].sample(num_samples=1, **kwargs).cpu().numpy()

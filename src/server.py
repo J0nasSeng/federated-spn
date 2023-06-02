@@ -17,7 +17,7 @@ from flwr.common import (
 from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy
 from flwr.server.strategy.aggregate import aggregate, weighted_loss_avg
-from einsum import EinsumNetwork, Graph
+from einsum import EinsumNetwork, Graph, EinetMixture
 import networkx as nx
 from datasets import get_dataset_loader
 import numpy as np
@@ -59,17 +59,21 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
         failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]],
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
         """Aggregate fit results using weighted average."""
-        print(failures)
         results = [
             (fit_res.parameters, fit_res.num_examples)
             for _, fit_res in results
         ]
+        num_exp = [ne for _, ne in results]
 
         # build global SPN     
         spns = [make_spn(param) for param, _ in results]
-        self.global_einet = make_global_spn(spns)
-        spn_params = spn_to_param_list(self.global_einet)
-        return ndarrays_to_parameters(spn_params), {}
+        p = [ne/sum(num_exp) for ne in num_exp]
+        mixture = EinetMixture.EinetMixture(p, spns)
+        samples = mixture.sample(25)
+        samples = samples.reshape((-1, 28, 28))
+        save_image_stack(samples, 5, 5, './samples/fedspn/samples.png')
+        spn_params = spn_to_param_list(mixture)
+        return spn_params, {}
     
     def evaluate(self, server_round, parameters):
         return 0, {}
@@ -121,97 +125,6 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
         """Use a fraction of available clients for evaluation."""
         num_clients = int(num_available_clients * self.fraction_evaluate)
         return max(num_clients, self.min_evaluate_clients), self.min_available_clients
-
-
-def make_global_spn(spns: List[EinsumNetwork.EinsumNetwork]):
-    # 1. merge graphs
-    new_graph = merge_graphs(spns)
-
-    # 2. create new spn using merged graph
-    args = EinsumNetwork.Args(
-        num_var=config.num_vars,
-        num_dims=1,
-        num_classes=1,
-        num_sums=config.K,
-        num_input_distributions=config.K*len(spns),
-        exponential_family=config.exponential_family,
-        exponential_family_args=config.exponential_family_args,
-        online_em_frequency=config.online_em_frequency,
-        online_em_stepsize=config.online_em_stepsize)
-    
-    #Graph.plot_graph(new_graph)
-    einet = EinsumNetwork.EinsumNetwork(new_graph, args)
-    # first initialize einet (important to fill buffers)
-    einet.initialize()
-    for l in einet.einet_layers:
-        print(l)
-        p = list(l.parameters())[0]
-        print(p.shape)
-    with torch.no_grad():
-        # for each spn sent by clients
-        for idx, spn in enumerate(spns):
-            # go through all layers of the SPN
-            for gl, cl in zip(einet.einet_layers, spn.einet_layers):
-                # concat parameter tensors (we simply extend the SPN)
-                if type(gl) == EinsumNetwork.EinsumLayer:
-                    cparams = list(cl.parameters())[0]
-                    gparams = list(gl.parameters())[0]
-                    start_idx = idx * cparams.shape[-1]
-                    end_idx = start_idx + cparams.shape[-1]
-                    gparams.data[:,:,:,start_idx:end_idx] = cparams.data
-                elif type(gl) == EinsumNetwork.EinsumMixingLayer:
-                    cparams = list(cl.parameters())[0]
-                    gparams = list(gl.parameters())[0]
-                    if cparams.shape[1] != gparams.shape[1]:
-                        start_idx = idx * cparams.shape[1]
-                        end_idx = start_idx + cparams.shape[1]
-                        gparams.data[:,start_idx:end_idx,:] = cparams.data
-                    elif cparams.shape[-1] != gparams.shape[-1]:
-                        start_idx = idx * cparams.shape[-1]
-                        end_idx = start_idx + cparams.shape[-1]
-                        gparams.data[:,:,start_idx:end_idx] = cparams.data
-                # add parameters values
-                # TODO: Check if sampling works if we simply set the parameters of a random client model
-                elif type(gl) == EinsumNetwork.FactorizedLeafLayer:
-                    cparams = list(cl.parameters())[0]
-                    gparams = list(gl.parameters())[0]
-                    start_idx = idx * cparams.shape[1]
-                    end_idx = start_idx + cparams.shape[1]
-                    gparams[:, start_idx:end_idx,:,:] = cparams
-        # for the factorized leaf layer: divide by number of spns sent
-        # to obtain mean of parameters
-        # TODO: What if not all clients send a model? Still average this way?
-        #for layer in einet.einet_layers:
-        #    if type(layer) == EinsumNetwork.FactorizedLeafLayer:
-        #        params = list(gl.parameters())[0]
-        #        params.copy_(params.data / len(spns))
-#
-    return einet
-
-def merge_graphs(spns: List[EinsumNetwork.EinsumNetwork]):
-    """
-        Adds new root node (sum node) and merges the SPN graphs from
-        all clients into one single graph
-    """
-    graphs = [spn.graph for spn in spns]
-    merged = graphs[0]
-    nodes = list(merged.nodes)
-    root = nodes[0]
-    for g in graphs[1:]:
-        # remember all successors of g's root
-        groot = list(g.nodes)[0]
-        groot_succ = g.successors(groot)
-        # add all nodes and edges from g to merged
-        g_nodes = list(g.nodes)[1:] # all except root
-        merged.add_nodes_from(g_nodes)
-        g_edges = [(n1, n2) for n1, n2 in g.edges if n1 != groot]
-        merged.add_edges_from(g_edges)
-
-        # connect root with successors of g's root (g's root gets dropped)
-        for succ in groot_succ:
-            merged.add_edge(root, succ)
-    
-    return merged
 
 def make_spn(params):
     """
@@ -271,37 +184,44 @@ def make_spn(params):
     return einet
 
 
-def spn_to_param_list(einet: EinsumNetwork.EinsumNetwork):
+def spn_to_param_list(mixture: EinetMixture.EinetMixture):
     """
         Transform a EinsumNetwork object to a parameter-array containing
         the structure as a list of lists and the parameters as a separate array.
     """
 
-    adj = nx.convert_matrix.to_numpy_array(einet.graph)
-    node_meta_info = []
+    parameters = []
     max_scope_len = 0
-    for node in einet.graph.nodes:
-        if len(node.scope) > max_scope_len:
-            max_scope_len = len(node.scope)
-        if type(node) == Graph.Product:
-            node_meta_info.append([0] + list(node.scope))
-        elif type(node) == Graph.DistributionVector and len(list(einet.graph.successors(node))) == 0:
-            node_meta_info.append([1] + list(node.scope))
-        else:
-            node_meta_info.append([2] + list(node.scope))
-    
-    # pad lists s.t. np.array works
-    for idx in range(len(node_meta_info)):
-        info = node_meta_info[idx]
-        scope = info[1:]
-        padding_len = max_scope_len - len(scope)
-        if padding_len > 0:
-            scope += [-1]*padding_len
-        node_meta_info[idx] = [info[0]] + scope
+    component_params = list(mixture.p)
+    for einet in mixture.einets:
+        adj = nx.convert_matrix.to_numpy_array(einet.graph)
+        node_meta_info = []
+        for node in einet.graph.nodes:
+            if len(node.scope) > max_scope_len:
+                max_scope_len = len(node.scope)
+            if type(node) == Graph.Product:
+                node_meta_info.append([0] + list(node.scope))
+            elif type(node) == Graph.DistributionVector and len(list(einet.graph.successors(node))) == 0:
+                node_meta_info.append([1] + list(node.scope))
+            else:
+                node_meta_info.append([2] + list(node.scope))
         
-    parameters = [p.cpu().detach().numpy() for p in einet.parameters() if p.requires_grad]
-
-    return parameters + [adj] + [np.array(node_meta_info)]
+        # pad lists s.t. np.array works
+        for idx in range(len(node_meta_info)):
+            info = node_meta_info[idx]
+            scope = info[1:]
+            padding_len = max_scope_len - len(scope)
+            if padding_len > 0:
+                scope += [-1]*padding_len
+            node_meta_info[idx] = [info[0]] + scope
+            
+        params = [p.cpu().detach().numpy() for p in einet.parameters() if p.requires_grad]
+        parameters.append(params)
+        parameters.append(adj)
+        parameters.append(np.array(node_meta_info))
+        parameters.append(component_params)
+    
+    return parameters
 
 def main():
 

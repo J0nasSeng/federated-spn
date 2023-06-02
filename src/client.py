@@ -1,7 +1,7 @@
 import flwr as fl
 import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
-from einsum import EinsumNetwork, Graph
+from einsum import EinsumNetwork, Graph, EinetMixture
 import config
 from datasets import get_dataset_loader
 from rtpt import RTPT
@@ -32,10 +32,6 @@ def main(dataset, num_clients, client_id, device):
             self.train_loader = DataLoader(train_data, config.batch_size, True)
             self.val_loader = DataLoader(val_data, config.batch_size, True)
             self.einet = init_spn(device)
-            for layer in self.einet.einet_layers:
-                params = list(layer.parameters())[0]
-                print(layer)
-                print(params.shape)
 
         def set_parameters(self, parameters):
             """
@@ -62,7 +58,7 @@ def main(dataset, num_clients, client_id, device):
             einet = make_spn(parameters)
             # TODO: what to evaluate here?
             # for now, just save model
-            samples = einet.sample(num_samples=25).cpu().numpy()
+            samples = einet.sample(25)
             samples = samples.reshape((-1, 28, 28))
             save_image_stack(samples, 5, 5, os.path.join('../samples/demo_mnist/', "samples.png"), margin_gray_val=0.)
             torch.save(einet, './model.pt')
@@ -140,56 +136,63 @@ def make_spn(params):
         params: List containing a description of the structure in form of
             a list of lists (=param[0]) and the SPN's parameters (=params[1])
     """
-    adj, meta_info = params[-2], params[-1]
-    parameters = params[:-2]
-
-    # 0 = Product node, 1 = Leaf node, 2 = Sum node
-    graph = nx.DiGraph()
-
-    # reconstruct graph based on adjacency, node-types and scopes
+    num_clients = len(params) / 4
+    einets = []
+    component_params = []
+    # reconstruct graphs based on adjacency, node-types and scopes
     # passed by client
-    for info in meta_info:
-        node_type = info[0]
-        info = info[1:]
-        scope = list(info[info != -1])
-        if node_type == 0:
-            node = Graph.Product(scope)
-        else:
-            node = Graph.DistributionVector(scope)
-        graph.add_node(node)
+    for it in range(num_clients):
+        parameters = params[0]
+        adj = params[1]
+        meta_info = params[2]
+        component_params = params[3]
+        params = params[3:]
+        graph = nx.DiGraph()
+        for info in meta_info:
+            node_type = info[0]
+            info = info[1:]
+            scope = list(info[info != -1])
+            if node_type == 0:
+                node = Graph.Product(scope)
+            else:
+                node = Graph.DistributionVector(scope)
+            graph.add_node(node)
 
-    nodes = list(graph.nodes)
-    for row in range(adj.shape[0]):
-        for col in range(adj.shape[0]):
-            if adj[row, col] == 1:
-                src, dst = nodes[row], nodes[col]
-                graph.add_edge(src, dst)
+        nodes = list(graph.nodes)
+        for row in range(adj.shape[0]):
+            for col in range(adj.shape[0]):
+                if adj[row, col] == 1:
+                    src, dst = nodes[row], nodes[col]
+                    graph.add_edge(src, dst)
 
-    for node in Graph.get_leaves(graph):
-        node.einet_address.replica_idx = 0
-    
-    args = EinsumNetwork.Args(
-        num_var=config.num_vars,
-        num_dims=1,
-        num_classes=1,
-        num_sums=config.K,
-        num_input_distributions=config.K,
-        exponential_family=config.exponential_family,
-        exponential_family_args=config.exponential_family_args,
-        online_em_frequency=config.online_em_frequency,
-        online_em_stepsize=config.online_em_stepsize)
+        for node in Graph.get_leaves(graph):
+            node.einet_address.replica_idx = 0
+        
+        args = EinsumNetwork.Args(
+            num_var=config.num_vars,
+            num_dims=1,
+            num_classes=1,
+            num_sums=config.K,
+            num_input_distributions=config.K,
+            exponential_family=config.exponential_family,
+            exponential_family_args=config.exponential_family_args,
+            online_em_frequency=config.online_em_frequency,
+            online_em_stepsize=config.online_em_stepsize)
 
-    # create einsum object and set parameters as sent by client
-    einet = EinsumNetwork.EinsumNetwork(graph, args)
-    # first initialize (relveant to fill buffers)
-    einet.initialize()
-    # set all parameters requiring gradient
-    with torch.no_grad():
-        for eparam, param in zip(einet.parameters(), parameters):
-            if eparam.requires_grad:
-                eparam.copy_(torch.tensor(param))
+        # create einsum object and set parameters as sent by client
+        einet = EinsumNetwork.EinsumNetwork(graph, args)
+        # first initialize (relveant to fill buffers)
+        einet.initialize()
+        # set all parameters requiring gradient
+        with torch.no_grad():
+            for eparam, param in zip(einet.parameters(), parameters):
+                if eparam.requires_grad:
+                    eparam.copy_(torch.tensor(param))
+        einets.append(einet)
 
-    return einet
+    mixture = EinetMixture.EinetMixture(component_params, einets)
+
+    return mixture
 
 def spn_to_param_list(einet: EinsumNetwork.EinsumNetwork):
     """
