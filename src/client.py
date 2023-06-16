@@ -12,11 +12,19 @@ import numpy as np
 from utils import flwr_params_to_numpy, save_image_stack
 import os
 import matplotlib.pyplot as plt
+from torch.utils.data import Subset
 
 def main(dataset, num_clients, client_id, device):
 
     data_loader = get_dataset_loader(dataset, num_clients, config.dataset_inds_file, config.data_skew)
     train_data, val_data = data_loader.load_client_data(client_id)
+    # artificially skew data 
+    #if client_id == 0:
+    #    idx = train_data.dataset.targets[train_data.dataset.targets == 0]
+    #    train_data = Subset(train_data.dataset, idx)
+    #else:
+    #    idx = train_data.dataset.targets[train_data.dataset.targets == 1]
+    #    train_data = Subset(train_data.dataset, idx)
     rtpt = RTPT('JS', 'FedSPN-Client', 10)
     rtpt.start()
 
@@ -46,7 +54,9 @@ def main(dataset, num_clients, client_id, device):
                 Fit SPN and send parameters to server
             """
             self.einet = train(self.einet, self.train_loader, config.num_epochs, device)
-
+            samples = self.einet.sample(25)
+            samples = samples.reshape((-1, 28, 28))
+            save_image_stack(samples, 5, 5, os.path.join('../samples/fedspn/', f"samples_{client_id}.png"), margin_gray_val=0.)
             # collect parameters and send back to server
             params = self.get_parameters()
             return params, len(train_data), {}
@@ -58,7 +68,7 @@ def main(dataset, num_clients, client_id, device):
             einet = make_spn(parameters)
             # TODO: what to evaluate here?
             # for now, just save model
-            samples = einet.sample(25)
+            samples = self.einet.sample(25)
             samples = samples.reshape((-1, 28, 28))
             save_image_stack(samples, 5, 5, os.path.join('../samples/demo_mnist/', "samples.png"), margin_gray_val=0.)
             torch.save(einet, './model.pt')

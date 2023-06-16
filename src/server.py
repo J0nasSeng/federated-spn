@@ -71,7 +71,7 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
         mixture = EinetMixture.EinetMixture(p, spns)
         samples = mixture.sample(25)
         samples = samples.reshape((-1, 28, 28))
-        save_image_stack(samples, 5, 5, './samples/fedspn/samples.png')
+        save_image_stack(samples, 5, 5, '../samples/fedspn/samples.png')
         spn_params = spn_to_param_list(mixture)
         return spn_params, {}
     

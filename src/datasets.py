@@ -298,10 +298,20 @@ class FashionMNISTLoader(Loader):
         self.train_data = torchvision.datasets.FashionMNIST('../../../datasets/femnist/', download=True, train=True, transform=transform)
         self.val_data = torchvision.datasets.FashionMNIST('../../../datasets/femnist/', download=True, train=False, transform=transform)
 
+class ImageNetLoader(Loader):
+
+    def __init__(self, n_clients, indspath, skew=0) -> None:
+        super().__init__(n_clients, indspath, skew)
+        transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((0,), (1,))])
+        self.train_data = torchvision.datasets.ImageNet('../../../datasets/imagenet/', download=True, train=True, transform=transform)
+        self.val_data = torchvision.datasets.ImageNet('../../../datasets/imagenet/', download=True, train=False, transform=transform)
+
 
 def get_dataset_loader(dataset, num_clients, indspath, skew=0):
     if dataset == 'mnist':
         return FashionMNISTLoader(num_clients, indspath, skew=skew)
+    elif dataset == 'imagenet':
+        return ImageNetLoader(num_clients, indspath, skew)
     else:
         raise ValueError('{} is not supported'.format(dataset))
 

@@ -42,7 +42,7 @@ online_em_stepsize = 0.05
 device = torch.device('cpu')
 
 dataset_inds_file = 'indices.json'
-data_skew = 0.0
+data_skew = 0.
 
 # Server config
 communication_rounds = 1
