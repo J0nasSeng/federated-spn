@@ -302,9 +302,9 @@ class ImageNetLoader(Loader):
 
     def __init__(self, n_clients, indspath, skew=0) -> None:
         super().__init__(n_clients, indspath, skew)
-        transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((0,), (1,))])
-        self.train_data = torchvision.datasets.ImageNet('../../../datasets/imagenet/', download=True, train=True, transform=transform)
-        self.val_data = torchvision.datasets.ImageNet('../../../datasets/imagenet/', download=True, train=False, transform=transform)
+        transform = torchvision.transforms.Compose([torchvision.transforms.Resize((224, 224)), torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((0,), (1,))])
+        self.train_data = torchvision.datasets.ImageNet('../../../datasets/imagenet/', split='train', transform=transform)
+        self.val_data = torchvision.datasets.ImageNet('../../../datasets/imagenet/', split='val', transform=transform)
 
 
 def get_dataset_loader(dataset, num_clients, indspath, skew=0):

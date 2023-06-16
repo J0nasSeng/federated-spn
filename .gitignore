@@ -4,3 +4,4 @@ indices.json
 model.pt
 models/
 samples/
+checkpoints/

@@ -24,6 +24,7 @@ import numpy as np
 from utils import flwr_params_to_numpy, save_image_stack, mkdir_p
 import os
 import networkx as nx
+from rtpt import RTPT
 
 class FedSPNStrategy(fl.server.strategy.Strategy):
 
@@ -31,9 +32,9 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
         self,
         fraction_fit: float = 1.0,
         fraction_evaluate: float = 1.0,
-        min_fit_clients: int = 2,
-        min_evaluate_clients: int = 2,
-        min_available_clients: int = 2,
+        min_fit_clients: int = config.num_clients,
+        min_evaluate_clients: int = config.num_clients,
+        min_available_clients: int = config.num_clients,
     ):
         super().__init__()
         self.fraction_fit = fraction_fit
@@ -41,7 +42,7 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
         self.min_fit_clients = min_fit_clients
         self.min_evaluate_clients = min_evaluate_clients
         self.min_available_clients = min_available_clients
-        loader = get_dataset_loader('mnist', 2, config.dataset_inds_file, config.data_skew)
+        loader = get_dataset_loader(config.dataset, config.num_clients, config.dataset_inds_file, config.data_skew)
         loader.partition()
 
     def initialize_parameters(
@@ -162,7 +163,7 @@ def make_spn(params):
     
     args = EinsumNetwork.Args(
         num_var=config.num_vars,
-        num_dims=1,
+        num_dims=config.num_dims,
         num_classes=1,
         num_sums=config.K,
         num_input_distributions=config.K,
@@ -229,9 +230,9 @@ def main():
     strategy = FedSPNStrategy(
         fraction_fit=0.2,
         fraction_evaluate=0.2,
-        min_fit_clients=2,
-        min_evaluate_clients=2,
-        min_available_clients=2,
+        min_fit_clients=config.num_clients,
+        min_evaluate_clients=config.num_clients,
+        min_available_clients=config.num_clients,
     )
 
     # Start Flower server for four rounds of federated learning
@@ -239,9 +240,12 @@ def main():
         server_address=f"[::]:{config.port}",
         config=fl.server.ServerConfig(num_rounds=config.communication_rounds),
         strategy=strategy,
-        grpc_max_message_length=562028236
+        grpc_max_message_length=662028236
     )
 
 
 if __name__ == "__main__":
+    rt = RTPT('JS', 'FedSPN Server', 1)
+    rt.start()
     main()
+    rt.step()

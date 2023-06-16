@@ -1,18 +1,21 @@
 import flwr as fl
 import torch
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader
 from einsum import EinsumNetwork, Graph, EinetMixture
 import config
 from datasets import get_dataset_loader
 from rtpt import RTPT
-from collections import OrderedDict
 import networkx as nx
 import argparse
 import numpy as np
 from utils import flwr_params_to_numpy, save_image_stack
 import os
-import matplotlib.pyplot as plt
-from torch.utils.data import Subset
+import logging
+import sys
+
+log_format = '%(asctime)s %(message)s'
+logging.basicConfig(stream=sys.stdout, level=logging.INFO,
+format=log_format, datefmt='%m/%d %I:%M:%S %p')
 
 def main(dataset, num_clients, client_id, device):
 
@@ -25,8 +28,12 @@ def main(dataset, num_clients, client_id, device):
     #else:
     #    idx = train_data.dataset.targets[train_data.dataset.targets == 1]
     #    train_data = Subset(train_data.dataset, idx)
-    rtpt = RTPT('JS', 'FedSPN-Client', 10)
+    rtpt = RTPT('JS', 'FedSPN-Client', config.num_epochs)
     rtpt.start()
+
+    # prepare checkpointing
+    if not os.path.exists(config.checkpoint_dir):
+        os.mkdir(config.checkpoint_dir + f'client_{client_id}')
 
     class SPNClient(fl.client.NumPyClient):
         """
@@ -53,7 +60,7 @@ def main(dataset, num_clients, client_id, device):
             """
                 Fit SPN and send parameters to server
             """
-            self.einet = train(self.einet, self.train_loader, config.num_epochs, device)
+            self.einet = train(self.einet, self.train_loader, config.num_epochs, device, config.checkpoint_dir + f'client_{client_id}')
             samples = self.einet.sample(25)
             samples = samples.reshape((-1, 28, 28))
             save_image_stack(samples, 5, 5, os.path.join('../samples/fedspn/', f"samples_{client_id}.png"), margin_gray_val=0.)
@@ -75,7 +82,7 @@ def main(dataset, num_clients, client_id, device):
 
     # Start client
     fl.client.start_numpy_client(server_address="[::]:{}".format(config.port), client=SPNClient(),
-                                 grpc_max_message_length=562028236)
+                                 grpc_max_message_length=662028236)
 
 def init_spn(device):
     """
@@ -101,7 +108,7 @@ def init_spn(device):
 
     args = EinsumNetwork.Args(
             num_var=config.num_vars,
-            num_dims=1,
+            num_dims=config.num_dims,
             num_classes=1,
             num_sums=config.K,
             num_input_distributions=config.K,
@@ -115,18 +122,21 @@ def init_spn(device):
     einet.to(device)
     return einet
 
-def train(einet, train_loader, num_epochs, device):
+def train(einet, train_loader, num_epochs, device, chk_path):
 
     """
     Training loop to train the SPN. Follows EM-procedure.
     """
-
+    logging.info('Starting Training...')
     for epoch_count in range(num_epochs):
         einet.train()
 
+        if epoch_count > 0 and epoch_count % config.checkpoint_freq == 0:
+            torch.save(einet, chk_path + f'_{epoch_count}.pt')
+
         total_ll = 0.0
-        for x, y in train_loader:
-            x = x.reshape(x.shape[0], config.num_vars)
+        for i, (x, y) in enumerate(train_loader):
+            x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
             x = x.to(device)
             outputs = einet.forward(x)
             ll_sample = EinsumNetwork.log_likelihoods(outputs)
@@ -135,6 +145,7 @@ def train(einet, train_loader, num_epochs, device):
 
             einet.em_process_batch()
             total_ll += log_likelihood.detach().item()
+        logging.info(f'Epoch {epoch_count}: LL={total_ll}')
 
         einet.em_update()
     return einet
@@ -253,4 +264,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     device = torch.device('cuda:{}'.format(args.gpu)) if args.gpu > -1 else torch.device('cpu')
-    main('mnist', 2, args.id, device)
+    main(config.dataset, 2, args.id, device)
