@@ -25,6 +25,7 @@ from utils import flwr_params_to_numpy, save_image_stack, mkdir_p
 import os
 import networkx as nx
 from rtpt import RTPT
+import time
 
 class FedSPNStrategy(fl.server.strategy.Strategy):
 
@@ -35,6 +36,7 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
         min_fit_clients: int = config.num_clients,
         min_evaluate_clients: int = config.num_clients,
         min_available_clients: int = config.num_clients,
+        sample_dir: str = './samples/',
     ):
         super().__init__()
         self.fraction_fit = fraction_fit
@@ -64,15 +66,16 @@ class FedSPNStrategy(fl.server.strategy.Strategy):
             (fit_res.parameters, fit_res.num_examples)
             for _, fit_res in results
         ]
-        num_exp = [ne for _, ne in results]
 
+        num_exp = [ne for _, ne in results]
         # build global SPN     
         spns = [make_spn(param) for param, _ in results]
         p = [ne/sum(num_exp) for ne in num_exp]
         mixture = EinetMixture.EinetMixture(p, spns)
         samples = mixture.sample(25)
         samples = samples.reshape((-1, 28, 28))
-        save_image_stack(samples, 5, 5, '../samples/fedspn/samples.png')
+        img_path = os.path.join(sample_dir, 'samples.png')
+        save_image_stack(samples, 5, 5, img_path, margin_gray_val=0.)
         spn_params = spn_to_param_list(mixture)
         return spn_params, {}
     
@@ -224,7 +227,7 @@ def spn_to_param_list(mixture: EinetMixture.EinetMixture):
     
     return parameters
 
-def main():
+def main(sample_dir):
 
     # Create strategy
     strategy = FedSPNStrategy(
@@ -233,19 +236,26 @@ def main():
         min_fit_clients=config.num_clients,
         min_evaluate_clients=config.num_clients,
         min_available_clients=config.num_clients,
+        sample_dir=sample_dir,
     )
 
     # Start Flower server for four rounds of federated learning
     fl.server.start_server(
-        server_address=f"[::]:{config.port}",
+        server_address=f"localhost:{config.port}",
         config=fl.server.ServerConfig(num_rounds=config.communication_rounds),
         strategy=strategy,
-        grpc_max_message_length=662028236
+        grpc_max_message_length=966368971
     )
 
 
 if __name__ == "__main__":
+
+    run_id = str(round(time.time() * 1000))
+
+    sample_dir = f'./samples/{run_id}'
+    os.makedirs(sample_dir, exist_ok=True)
+
     rt = RTPT('JS', 'FedSPN Server', 1)
     rt.start()
-    main()
+    main(sample_dir)
     rt.step()

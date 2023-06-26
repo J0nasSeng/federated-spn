@@ -13,13 +13,13 @@ if exponential_family == EinsumNetwork.BinomialArray:
 if exponential_family == EinsumNetwork.CategoricalArray:
     exponential_family_args = {'K': 256}
 if exponential_family == EinsumNetwork.NormalArray:
-    exponential_family_args = {'min_var': 1e-6, 'max_var': 0.1}
+    exponential_family_args = {'min_var': 1e-6, 'max_var': 0.01}
 
 classes = [7]
 # classes = [2, 3, 5, 7]
 # classes = None
 
-K = 10
+K = 40
 
 structure = 'poon-domingos'
 # structure = 'binary-trees'
@@ -28,8 +28,8 @@ structure = 'poon-domingos'
 # pd_num_pieces = [4]
 pd_num_pieces = [7]
 # pd_num_pieces = [7, 28]
-width = 224
-height = 224
+width = 32
+height = 32
 num_vars = width*height
 num_dims = 3
 
@@ -37,25 +37,20 @@ num_dims = 3
 depth = 3
 num_repetitions = 20
 
-num_epochs = 20
-batch_size = 100
-online_em_frequency = 1
-online_em_stepsize = 0.05
-num_clients = 25
+num_epochs = 3
+batch_size = 32
+online_em_frequency = 50
+online_em_stepsize = 0.5
+num_clients = 1
 
 checkpoint_freq = 2
-checkpoint_dir = f'./checkpoints/chk_{round(time.time() * 1000)}/'
-
-# copy config to checkpoint
-os.makedirs(checkpoint_dir, exist_ok=True)
-shutil.copyfile('./config.py', os.path.join(checkpoint_dir, 'config.py'))
 
 dataset_inds_file = 'indices.json'
-dataset = 'imagenet'
+dataset = 'svhn'
 data_skew = 0.
 
 # Server config
 communication_rounds = 1
 
 # Client config
-port = '12000'
+port = '12005'

@@ -18,6 +18,7 @@ class EinetMixture:
         self.einets = einets
 
         num_var = set([e.args.num_var for e in einets])
+        print(num_var)
         if len(num_var) != 1:
             raise AssertionError("all EiNet components must have the same num_var.")
         self.num_var = list(num_var)[0]
@@ -31,7 +32,8 @@ class EinetMixture:
         samples = np.zeros((N, self.num_dims, self.num_var))
         for k in range(N):
             rand_idx = np.sum(np.random.rand() > np.cumsum(self.p[0:-1]))
-            samples[k, ...] = self.einets[rand_idx].sample(num_samples=1, **kwargs).cpu().numpy()
+            s = self.einets[rand_idx].sample(num_samples=1, **kwargs).cpu().numpy()
+            samples[k, ...] = s.transpose(0, 2, 1)
         return samples
 
     def conditional_sample(self, x, marginalize_idx, **kwargs):
