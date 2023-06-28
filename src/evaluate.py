@@ -24,7 +24,6 @@ p = [1/len(client_einets)] * len(client_einets)
 mixture = EinetMixture(p, client_einets)
 
 samples = mixture.sample(25, std_correction=0.0)
-samples = samples.reshape((-1, config.height, config.width, 3))
-print(samples)
+samples = samples.reshape((-1, config.height, config.width, config.num_dims))
 img_path = os.path.join(args.sample_dir, 'samples.png')
 save_image_stack(samples, 5, 5, img_path, margin_gray_val=0., frame=2)

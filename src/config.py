@@ -26,8 +26,8 @@ structure = 'poon-domingos'
 
 # 'poon-domingos'
 # pd_num_pieces = [4]
-pd_num_pieces = [7]
-# pd_num_pieces = [7, 28]
+#pd_num_pieces = [7]
+pd_num_pieces = [8, 32]
 width = 32
 height = 32
 num_vars = width*height
@@ -38,7 +38,7 @@ depth = 3
 num_repetitions = 20
 
 num_epochs = 3
-batch_size = 32
+batch_size = 64
 online_em_frequency = 50
 online_em_stepsize = 0.5
 num_clients = 1

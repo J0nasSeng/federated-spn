@@ -17,6 +17,7 @@ import math
 
 def maybe_download(directory, url_base, filename):
     filepath = os.path.join(directory, filename)
+    print(filepath)
     if os.path.isfile(filepath):
         return False
 
@@ -213,7 +214,7 @@ DEBD_display_name = {
 def maybe_download_svhn():
     svhn_files = ['train_32x32.mat', 'test_32x32.mat', "extra_32x32.mat"]
     for file in svhn_files:
-        maybe_download('../data/svhn', 'http://ufldl.stanford.edu/housenumbers/', file)
+        maybe_download('../../../datasets/svhn/', 'http://ufldl.stanford.edu/housenumbers/', file)
 
 
 def load_svhn(dtype=np.uint8):
@@ -223,7 +224,7 @@ def load_svhn(dtype=np.uint8):
 
     maybe_download_svhn()
 
-    data_dir = '../data/svhn'
+    data_dir = '../../../datasets/svhn/'
 
     data_train = sp.loadmat(os.path.join(data_dir, "train_32x32.mat"))
     data_test = sp.loadmat(os.path.join(data_dir, "test_32x32.mat"))
@@ -310,9 +311,10 @@ class SVHNLoader(Loader):
 
     def __init__(self, n_clients, indspath, skew=0) -> None:
         super().__init__(n_clients, indspath, skew)
-        transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((0,), (1,))])
+        transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
         self.train_data = torchvision.datasets.SVHN('../../../datasets/svhn/', split='train', transform=transform, download=True)
         self.val_data = torchvision.datasets.SVHN('../../../datasets/svhn/', split='test', transform=transform, download=True)
+        self.ex_data = torchvision.datasets.SVHN('../../../datasets/svhn/', split='extra', transform=transform, download=True)
 
 
 def get_dataset_loader(dataset, num_clients, indspath, skew=0):

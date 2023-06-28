@@ -58,7 +58,7 @@ def main(dataset, num_clients, client_id, chk_dir, device):
             """
             self.einet = train(self.einet, self.train_loader, config.num_epochs, device, chk_dir)
             samples = self.einet.sample(25).detach().cpu().numpy()
-            samples = samples.reshape((-1, 32, 32, 3))
+            samples = samples.reshape((-1, config.height, config.width, config.num_dims))
             img_path = os.path.join(chk_dir, 'samples.png')
             save_image_stack(samples, 5, 5, img_path, margin_gray_val=0.)
             # collect parameters and send back to server
@@ -135,6 +135,7 @@ def train(einet, train_loader, num_epochs, device, chk_path):
 
         total_ll = 0.0
         for i, (x, y) in enumerate(train_loader):
+            x = x.permute((0, 2, 3, 1))
             x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
             x = x.to(device)
             outputs = einet.forward(x)

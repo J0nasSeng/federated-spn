@@ -3,10 +3,7 @@ import os
 import torch
 import errno
 from PIL import Image
-import networkx as nx
-from einsum import EinsumNetwork, Graph
-from collections import OrderedDict
-from numproto import proto_to_ndarray, ndarray_to_proto
+from numproto import proto_to_ndarray
 
 
 def mkdir_p(path):
