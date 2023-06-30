@@ -26,10 +26,10 @@ structure = 'poon-domingos'
 
 # 'poon-domingos'
 # pd_num_pieces = [4]
-#pd_num_pieces = [7]
-pd_num_pieces = [8, 32]
-width = 32
-height = 32
+pd_num_pieces = [7]
+#pd_num_pieces = [8, 32]
+width = 224
+height = 224
 num_vars = width*height
 num_dims = 3
 
@@ -37,16 +37,16 @@ num_dims = 3
 depth = 3
 num_repetitions = 20
 
-num_epochs = 3
+num_epochs = 10
 batch_size = 64
 online_em_frequency = 50
 online_em_stepsize = 0.5
-num_clients = 1
+num_clients = 15
 
 checkpoint_freq = 2
 
 dataset_inds_file = 'indices.json'
-dataset = 'svhn'
+dataset = 'imagenet'
 data_skew = 0.
 
 # Server config

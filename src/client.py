@@ -56,9 +56,13 @@ def main(dataset, num_clients, client_id, chk_dir, device):
             """
                 Fit SPN and send parameters to server
             """
-            self.einet = train(self.einet, self.train_loader, config.num_epochs, device, chk_dir)
-            samples = self.einet.sample(25).detach().cpu().numpy()
+            mean = compute_dataset_mean(self.train_loader)
+            self.einet = train(self.einet, self.train_loader, config.num_epochs, device, chk_dir, mean)
+            samples = self.einet.sample(25, std_correction=0.0).detach().cpu().numpy()
             samples = samples.reshape((-1, config.height, config.width, config.num_dims))
+            samples += mean.cpu().numpy() / 255.
+            samples -= samples.min()
+            samples /= samples.max()
             img_path = os.path.join(chk_dir, 'samples.png')
             save_image_stack(samples, 5, 5, img_path, margin_gray_val=0.)
             # collect parameters and send back to server
@@ -97,7 +101,7 @@ def init_spn(device):
 
     if config.structure == 'poon-domingos':
         pd_delta = [[config.height / d, config.width / d] for d in config.pd_num_pieces]
-        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=pd_delta)
+        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=pd_delta, axes=[0, 1])
     elif config.structure == 'binary-trees':
         graph = Graph.random_binary_trees(num_var=config.num_vars, depth=config.depth, num_repetitions=config.num_repetitions)
     elif config.structure == 'flat-binary-tree':
@@ -121,7 +125,16 @@ def init_spn(device):
     einet.to(device)
     return einet
 
-def train(einet, train_loader, num_epochs, device, chk_path):
+def compute_dataset_mean(train_loader):
+    batch_means = []
+    for x, _ in train_loader:
+        x = x.permute((0, 2, 3, 1))
+        batch_mean = torch.mean(x, dim=0)
+        batch_means.append(batch_mean)
+    batch_means = sum(batch_means) / len(batch_means)
+    return batch_means
+
+def train(einet, train_loader, num_epochs, device, chk_path, mean=None):
 
     """
     Training loop to train the SPN. Follows EM-procedure.
@@ -136,6 +149,9 @@ def train(einet, train_loader, num_epochs, device, chk_path):
         total_ll = 0.0
         for i, (x, y) in enumerate(train_loader):
             x = x.permute((0, 2, 3, 1))
+            if mean is not None:
+                x -= mean
+            x /= 255.
             x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
             x = x.to(device)
             outputs = einet.forward(x)
