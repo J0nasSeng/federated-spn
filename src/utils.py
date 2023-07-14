@@ -4,7 +4,7 @@ import torch
 import errno
 from PIL import Image
 from numproto import proto_to_ndarray
-
+from torch.utils.data import DataLoader
 
 def mkdir_p(path):
     """Linux mkdir -p"""
@@ -82,3 +82,9 @@ def flwr_params_to_numpy(params):
         parameters.append(proto_to_ndarray(param_bytes))
 
     return parameters, adj, meta_info
+
+def get_data_by_cluster(dataloader: DataLoader, idx, cluster_n):
+    idx = np.argwhere(idx == cluster_n).flatten()
+    dataset_inds = dataloader.dataset.indices
+    matching_inds = [i for i in idx if i in dataset_inds]
+    return matching_inds

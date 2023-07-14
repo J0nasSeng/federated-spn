@@ -5,3 +5,4 @@ model.pt
 models/
 samples/
 checkpoints/
+precomputed/

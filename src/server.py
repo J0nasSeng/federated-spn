@@ -1,18 +1,13 @@
 import flwr as fl
 import config
 from typing import Union, Optional, List, Tuple, Dict
-from collections import OrderedDict
 import torch
 from flwr.common import (
     EvaluateIns,
-    EvaluateRes,
     FitIns,
     FitRes,
-    MetricsAggregationFn,
-    NDArrays,
     Parameters,
     Scalar,
-    ndarrays_to_parameters
 )
 from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy

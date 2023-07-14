@@ -1,6 +1,6 @@
 import flwr as fl
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset, TensorDataset
 from einsum import EinsumNetwork, Graph, EinetMixture
 import config
 from datasets import get_dataset_loader
@@ -8,10 +8,12 @@ from rtpt import RTPT
 import networkx as nx
 import argparse
 import numpy as np
-from utils import flwr_params_to_numpy, save_image_stack
+from utils import flwr_params_to_numpy, save_image_stack, get_data_by_cluster
 import os
 import logging
 import sys
+from sklearn.cluster import KMeans, MiniBatchKMeans
+import pickle
 
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
@@ -21,13 +23,6 @@ def main(dataset, num_clients, client_id, chk_dir, device):
 
     data_loader = get_dataset_loader(dataset, num_clients, config.dataset_inds_file, config.data_skew)
     train_data, val_data = data_loader.load_client_data(client_id)
-    # artificially skew data 
-    #if client_id == 0:
-    #    idx = train_data.dataset.targets[train_data.dataset.targets == 0]
-    #    train_data = Subset(train_data.dataset, idx)
-    #else:
-    #    idx = train_data.dataset.targets[train_data.dataset.targets == 1]
-    #    train_data = Subset(train_data.dataset, idx)
     rtpt = RTPT('JS', 'FedSPN-Client', config.num_epochs)
     rtpt.start()
 
@@ -56,13 +51,12 @@ def main(dataset, num_clients, client_id, chk_dir, device):
             """
                 Fit SPN and send parameters to server
             """
-            mean = compute_dataset_mean(self.train_loader)
-            self.einet = train(self.einet, self.train_loader, config.num_epochs, device, chk_dir, mean)
+            means, idx, train_x = cluster_data(self.train_loader, client_id)
+            means = compute_cluster_means(train_x, idx)
+            einets, weights = train_mixture(idx, self.train_loader, config.num_epochs, device, chk_dir, means)
+            self.einet = EinetMixture.EinetMixture(weights, einets)
             samples = self.einet.sample(25, std_correction=0.0).detach().cpu().numpy()
             samples = samples.reshape((-1, config.height, config.width, config.num_dims))
-            samples += mean.cpu().numpy() / 255.
-            samples -= samples.min()
-            samples /= samples.max()
             img_path = os.path.join(chk_dir, 'samples.png')
             save_image_stack(samples, 5, 5, img_path, margin_gray_val=0.)
             # collect parameters and send back to server
@@ -101,7 +95,7 @@ def init_spn(device):
 
     if config.structure == 'poon-domingos':
         pd_delta = [[config.height / d, config.width / d] for d in config.pd_num_pieces]
-        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=pd_delta, axes=[0, 1])
+        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=[4], axes=[1])
     elif config.structure == 'binary-trees':
         graph = Graph.random_binary_trees(num_var=config.num_vars, depth=config.depth, num_repetitions=config.num_repetitions)
     elif config.structure == 'flat-binary-tree':
@@ -125,16 +119,54 @@ def init_spn(device):
     einet.to(device)
     return einet
 
-def compute_dataset_mean(train_loader):
+def compute_dataset_mean(train_loader, client_id):
+    if os.path.isfile(f'./precomputed/means.npy'):
+        batch_means = np.loadtxt(f'./precomputed/means.npy')
+        logging.info('Using precomputed means at ./precomputed/means.npy')
+        return batch_means
     batch_means = []
     for x, _ in train_loader:
         x = x.permute((0, 2, 3, 1))
         batch_mean = torch.mean(x, dim=0)
         batch_means.append(batch_mean)
     batch_means = sum(batch_means) / len(batch_means)
+    np.save(f'./precomputed/means', batch_means)
     return batch_means
 
-def train(einet, train_loader, num_epochs, device, chk_path, mean=None):
+def cluster_data(train_loader, client_id):
+    train_data = torch.concat([x.permute((0, 2, 3, 1)) for x, _ in train_loader]).numpy()
+    indices = train_loader.dataset.indices
+    if os.path.isfile(f'./precomputed/clusters/cluster'):
+        means, idx = pickle.load(open(f'./precomputed/clusters/cluster', 'rb'))
+        logging.info('Using precomputed clusters at ./precomputed/clusters/cluster')
+        return means, idx[indices], train_data
+    # path does not exist -> create
+    os.makedirs(f'./precomputed/clusters/', exist_ok=True)
+    logging.info('Compute clusters')
+    kmeans = MiniBatchKMeans(n_clusters=config.num_clusters,
+                                max_iter=100,
+                                n_init=3,
+                                verbose=3,
+                                batch_size=1204).fit(train_data.reshape(train_data.shape[0], -1))
+    #kmeans = KMeans(n_clusters=config.num_clusters,
+    #                verbose=3,
+    #                max_iter=100,
+    #                n_init=3).fit(cluster_dataset.reshape(cluster_dataset.shape[0], -1))
+    logging.info('Clusters computed')
+    means = kmeans.cluster_centers_
+    idx = kmeans.labels_
+    #aidx = kmeans.predict(train_data.reshape(train_data.shape[0], -1))
+    pickle.dump((means, idx), open(f'./precomputed/clusters/clusters', 'wb'))
+    return means, idx, train_data
+
+def compute_cluster_means(data, cluster_idx, num_clusters=1000):
+    unique_idx = np.unique(cluster_idx)
+    means = np.zeros((num_clusters, config.height, config.width, 3), dtype=np.float32)
+    for k in unique_idx:
+        means[k, ...] = np.mean(data[cluster_idx == k, ...].astype(np.float32), 0)
+    return means
+
+def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_model=True):
 
     """
     Training loop to train the SPN. Follows EM-procedure.
@@ -143,13 +175,15 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None):
     for epoch_count in range(num_epochs):
         einet.train()
 
-        if epoch_count > 0 and epoch_count % config.checkpoint_freq == 0:
+        if save_model and (epoch_count > 0 and epoch_count % config.checkpoint_freq == 0):
             torch.save(einet, os.path.join(chk_path, f'chk_{epoch_count}.pt'))
 
         total_ll = 0.0
         for i, (x, y) in enumerate(train_loader):
+            x = x.to(device)
             x = x.permute((0, 2, 3, 1))
             if mean is not None:
+                mean = mean.to(device)
                 x -= mean
             x /= 255.
             x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
@@ -168,6 +202,31 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None):
 
         einet.em_update()
     return einet
+
+def train_mixture(cluster_idx, train_loader, num_epochs, device, chk_path, mean=None):
+    einets = []
+    weights = []
+    mean = torch.tensor(mean, device)
+    for idx in np.unique(cluster_idx):
+        if not torch.all(mean[idx] == 0):
+            train_data_inds = get_data_by_cluster(train_loader, cluster_idx, idx)
+            train_data = Subset(train_loader.dataset, train_data_inds)
+            train_loader = DataLoader(train_data, config.batch_size, True, num_workers=1, persistent_workers=True)
+            spn = init_spn(device)
+            spn = train(spn, train_loader, num_epochs, device, f'{chk_path}/cluster_{idx}/', 
+                        mean[idx], save_model=False)
+            with torch.no_grad():
+                params = spn.einet_layers[0].ef_array.params
+                mu2 = params[..., 0:3] ** 2
+                params[..., 3:] -= mu2
+                params[..., 3:] = torch.clamp(params[..., 3:], config.exponential_family_args['min_var'], config.exponential_family_args['max_var'])
+                params[..., 0:3] += mean[idx].reshape((config.width*config.height, 1, 1, 3)) / 255.
+                params[..., 3:] += params[..., 0:3] ** 2
+            weight = len(idx) / len(train_data_inds)
+            weights.append(weight)
+            einets.append(spn)
+
+    return einets, weights
 
 def make_spn(params):
     """
