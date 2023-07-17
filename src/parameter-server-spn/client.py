@@ -51,11 +51,10 @@ def main(dataset, num_clients, client_id, chk_dir, device):
             """
                 Fit SPN and send parameters to server
             """
-            means, idx, train_x = cluster_data(self.train_loader, client_id)
-            means = compute_cluster_means(train_x, idx)
+            means, idx, _ = cluster_data(self.train_loader, client_id)
             einets, weights = train_mixture(idx, self.train_loader, config.num_epochs, device, chk_dir, means)
             self.einet = EinetMixture.EinetMixture(weights, einets)
-            samples = self.einet.sample(25, std_correction=0.0).detach().cpu().numpy()
+            samples = self.einet.sample(25, std_correction=0.0)
             samples = samples.reshape((-1, config.height, config.width, config.num_dims))
             img_path = os.path.join(chk_dir, 'samples.png')
             save_image_stack(samples, 5, 5, img_path, margin_gray_val=0.)
@@ -95,7 +94,7 @@ def init_spn(device):
 
     if config.structure == 'poon-domingos':
         pd_delta = [[config.height / d, config.width / d] for d in config.pd_num_pieces]
-        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=[4], axes=[1])
+        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=[8], axes=[1])
     elif config.structure == 'binary-trees':
         graph = Graph.random_binary_trees(num_var=config.num_vars, depth=config.depth, num_repetitions=config.num_repetitions)
     elif config.structure == 'flat-binary-tree':
@@ -206,26 +205,25 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
 def train_mixture(cluster_idx, train_loader, num_epochs, device, chk_path, mean=None):
     einets = []
     weights = []
-    mean = torch.tensor(mean, device)
-    for idx in np.unique(cluster_idx):
-        if not torch.all(mean[idx] == 0):
-            train_data_inds = get_data_by_cluster(train_loader, cluster_idx, idx)
+    mean = torch.tensor(mean, device=device)
+    for cluster in np.unique(cluster_idx):
+        train_data_inds = get_data_by_cluster(train_loader, cluster_idx, cluster)
+        if len(train_data_inds) > 0:
             train_data = Subset(train_loader.dataset, train_data_inds)
-            train_loader = DataLoader(train_data, config.batch_size, True, num_workers=1, persistent_workers=True)
+            n_train_loader = DataLoader(train_data, config.batch_size, True, num_workers=1, persistent_workers=True)
             spn = init_spn(device)
-            spn = train(spn, train_loader, num_epochs, device, f'{chk_path}/cluster_{idx}/', 
-                        mean[idx], save_model=False)
+            spn = train(spn, n_train_loader, num_epochs, device, f'{chk_path}/cluster_{cluster}/', 
+                        mean[cluster].reshape((config.width, config.height, config.num_dims)), save_model=False)
             with torch.no_grad():
                 params = spn.einet_layers[0].ef_array.params
                 mu2 = params[..., 0:3] ** 2
                 params[..., 3:] -= mu2
                 params[..., 3:] = torch.clamp(params[..., 3:], config.exponential_family_args['min_var'], config.exponential_family_args['max_var'])
-                params[..., 0:3] += mean[idx].reshape((config.width*config.height, 1, 1, 3)) / 255.
+                params[..., 0:3] += mean[cluster].reshape((config.width*config.height, 1, 1, 3)) / 255.
                 params[..., 3:] += params[..., 0:3] ** 2
-            weight = len(idx) / len(train_data_inds)
+            weight = len(train_data_inds) / len(train_loader.dataset)
             weights.append(weight)
             einets.append(spn)
-
     return einets, weights
 
 def make_spn(params):

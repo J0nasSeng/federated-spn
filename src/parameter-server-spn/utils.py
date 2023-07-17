@@ -84,7 +84,7 @@ def flwr_params_to_numpy(params):
     return parameters, adj, meta_info
 
 def get_data_by_cluster(dataloader: DataLoader, idx, cluster_n):
-    idx = np.argwhere(idx == cluster_n).flatten()
+    data_idx = np.argwhere(idx == cluster_n).flatten()
     dataset_inds = dataloader.dataset.indices
-    matching_inds = [i for i in idx if i in dataset_inds]
+    matching_inds = [i for i in data_idx if i in dataset_inds]
     return matching_inds

@@ -38,7 +38,7 @@ depth = 3
 num_repetitions = 6
 
 num_epochs = 3
-batch_size = 64
+batch_size = 32
 online_em_frequency = 50
 online_em_stepsize = 0.5
 num_clients = 15

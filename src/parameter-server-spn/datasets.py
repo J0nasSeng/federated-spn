@@ -296,25 +296,25 @@ class FashionMNISTLoader(Loader):
     def __init__(self, n_clients, indspath, skew=0) -> None:
         super().__init__(n_clients, indspath, skew)
         transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((0,), (1,))])
-        self.train_data = torchvision.datasets.FashionMNIST('../../../datasets/femnist/', download=True, train=True, transform=transform)
-        self.val_data = torchvision.datasets.FashionMNIST('../../../datasets/femnist/', download=True, train=False, transform=transform)
+        self.train_data = torchvision.datasets.FashionMNIST('../../../../datasets/femnist/', download=True, train=True, transform=transform)
+        self.val_data = torchvision.datasets.FashionMNIST('../../../../datasets/femnist/', download=True, train=False, transform=transform)
 
 class ImageNetLoader(Loader):
 
     def __init__(self, n_clients, indspath, skew=0) -> None:
         super().__init__(n_clients, indspath, skew)
         transform = torchvision.transforms.Compose([torchvision.transforms.Resize((224, 224)), torchvision.transforms.ToTensor(), torchvision.transforms.Normalize(mean=(0,)*3, std=(1/255,)*3)])
-        self.train_data = torchvision.datasets.ImageNet('../../../datasets/imagenet/', split='train', transform=transform)
-        self.val_data = torchvision.datasets.ImageNet('../../../datasets/imagenet/', split='val', transform=transform)
+        self.train_data = torchvision.datasets.ImageNet('../../../../datasets/imagenet/', split='train', transform=transform)
+        self.val_data = torchvision.datasets.ImageNet('../../../../datasets/imagenet/', split='val', transform=transform)
 
 class SVHNLoader(Loader):
 
     def __init__(self, n_clients, indspath, skew=0) -> None:
         super().__init__(n_clients, indspath, skew)
         transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), torchvision.transforms.Normalize(mean=(0,)*3, std=(1/255,)*3)])
-        self.train_data = torchvision.datasets.SVHN('../../../datasets/svhn/', split='train', transform=transform, download=True)
-        self.val_data = torchvision.datasets.SVHN('../../../datasets/svhn/', split='test', transform=transform, download=True)
-        self.ex_data = torchvision.datasets.SVHN('../../../datasets/svhn/', split='extra', transform=transform, download=True)
+        self.train_data = torchvision.datasets.SVHN('../../../../datasets/svhn/', split='train', transform=transform, download=True)
+        self.val_data = torchvision.datasets.SVHN('../../../../datasets/svhn/', split='test', transform=transform, download=True)
+        self.ex_data = torchvision.datasets.SVHN('../../../../datasets/svhn/', split='extra', transform=transform, download=True)
 
 
 def get_dataset_loader(dataset, num_clients, indspath, skew=0):

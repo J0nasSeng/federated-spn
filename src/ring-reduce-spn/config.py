@@ -5,7 +5,7 @@ import os
 
 #exponential_family = EinsumNetwork.BinomialArray
 #exponential_family = EinsumNetwork.CategoricalArray
-exponential_family = EinsumNetwork.NormalArray
+exponential_family = EinsumNetwork.BinomialArray
 
 exponential_family_args = None
 if exponential_family == EinsumNetwork.BinomialArray:
@@ -21,17 +21,15 @@ classes = [7]
 
 K = 40
 
-structure = 'poon-domingos'
-#structure = 'binary-trees'
+#structure = 'poon-domingos'
+structure = 'binary-trees'
 
 # 'poon-domingos'
 pd_num_pieces = [4]
 #pd_num_pieces = [7]
 #pd_num_pieces = [8, 32]
-width = 224
-height = 224
-num_vars = width*height
-num_dims = 3
+num_vars = 2988 # num variables of medical dataset
+num_dims = 1
 
 # 'binary-trees'
 depth = 3
@@ -46,7 +44,7 @@ num_clients = 15
 checkpoint_freq = 2
 
 dataset_inds_file = 'indices.json'
-dataset = 'imagenet'
+dataset = 'medical'
 data_skew = 0.
 
 num_clusters = 100
