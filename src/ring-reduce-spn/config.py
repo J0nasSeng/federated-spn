@@ -19,7 +19,7 @@ classes = [7]
 # classes = [2, 3, 5, 7]
 # classes = None
 
-K = 40
+K = 10
 
 #structure = 'poon-domingos'
 structure = 'binary-trees'
@@ -39,7 +39,7 @@ num_epochs = 3
 batch_size = 64
 online_em_frequency = 50
 online_em_stepsize = 0.5
-num_clients = 15
+num_clients = 5
 
 checkpoint_freq = 2
 

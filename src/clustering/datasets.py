@@ -4,6 +4,7 @@ import torchvision
 import json
 import torch
 import math
+import os
 
 
 class Loader:
@@ -15,10 +16,13 @@ class Loader:
         self.train_data = None
         self.val_data = None
 
-    def partition(self):
+    def partition(self, reuse_json=True):
         """
         Loads the Fashion-MNIST dataset
         """
+        if reuse_json and os.path.isfile(self.indspath):
+            print("Reusing existing indices")
+            return
         self.train_partitions, self.val_partitions, self.test_set, train_inds, val_inds, test_inds = partition_skewed(self.train_data, self.val_data, self.n_clients, skew=self.skew)
         train_dict, val_dict = {}, {}
         for i, inds in enumerate(train_inds):

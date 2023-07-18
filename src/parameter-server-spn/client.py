@@ -120,8 +120,8 @@ def init_spn(device):
 
 def compute_dataset_mean(train_loader, client_id):
     if os.path.isfile(f'./precomputed/means.npy'):
-        batch_means = np.loadtxt(f'./precomputed/means.npy')
-        logging.info('Using precomputed means at ./precomputed/means.npy')
+        batch_means = np.loadtxt(f'./precomputed/means_{client_id}.npy')
+        logging.info(f'Using precomputed means at ./precomputed/means_{client_id}.npy')
         return batch_means
     batch_means = []
     for x, _ in train_loader:
@@ -129,16 +129,15 @@ def compute_dataset_mean(train_loader, client_id):
         batch_mean = torch.mean(x, dim=0)
         batch_means.append(batch_mean)
     batch_means = sum(batch_means) / len(batch_means)
-    np.save(f'./precomputed/means', batch_means)
+    np.save(f'./precomputed/means_{client_id}', batch_means)
     return batch_means
 
 def cluster_data(train_loader, client_id):
     train_data = torch.concat([x.permute((0, 2, 3, 1)) for x, _ in train_loader]).numpy()
-    indices = train_loader.dataset.indices
-    if os.path.isfile(f'./precomputed/clusters/cluster'):
-        means, idx = pickle.load(open(f'./precomputed/clusters/cluster', 'rb'))
-        logging.info('Using precomputed clusters at ./precomputed/clusters/cluster')
-        return means, idx[indices], train_data
+    if os.path.isfile(f'./precomputed/clusters/cluster_{client_id}'):
+        means, idx = pickle.load(open(f'./precomputed/clusters/cluster_{client_id}', 'rb'))
+        logging.info(f'Using precomputed clusters at ./precomputed/clusters/cluster_{client_id}')
+        return means, idx, train_data
     # path does not exist -> create
     os.makedirs(f'./precomputed/clusters/', exist_ok=True)
     logging.info('Compute clusters')
@@ -155,7 +154,7 @@ def cluster_data(train_loader, client_id):
     means = kmeans.cluster_centers_
     idx = kmeans.labels_
     #aidx = kmeans.predict(train_data.reshape(train_data.shape[0], -1))
-    pickle.dump((means, idx), open(f'./precomputed/clusters/clusters', 'wb'))
+    pickle.dump((means, idx), open(f'./precomputed/clusters/clusters_{client_id}', 'wb'))
     return means, idx, train_data
 
 def compute_cluster_means(data, cluster_idx, num_clusters=1000):

@@ -1,5 +1,6 @@
 from torch.utils.data import TensorDataset
 import numpy as np
+import torch
 import os
 import arff
 from scipy.io.arff import loadarff
@@ -69,6 +70,10 @@ def get_categorical_data(path, name):
 
 def get_medical_data():
     train_x, train_y, test_x, test_y = get_categorical_data('../../datasets/', 'medical')
-    train_joint, test_joint = np.hstack((train_x, train_y)), np.hstack((test_x, test_y))
-    train_ds, test_ds = TensorDataset(train_joint), TensorDataset(test_joint)
+    train_x, train_y = torch.tensor(train_x), torch.tensor(train_y)
+    test_x, test_y = torch.tensor(test_x), torch.tensor(test_y)
+    train_joint = torch.hstack((train_x, train_y))
+    test_joint = torch.hstack((test_x, test_y))
+    train_ds, test_ds = TensorDataset(train_joint, torch.zeros(len(train_joint))), \
+        TensorDataset(test_joint, torch.zeros(len(test_joint)))
     return train_ds, test_ds

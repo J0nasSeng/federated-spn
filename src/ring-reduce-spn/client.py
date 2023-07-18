@@ -13,7 +13,7 @@ import os
 import torch
 import numpy as np
 
-@ray.remote
+@ray.remote(num_gpus=1)
 class Node:
 
     def __init__(self, dataset, chk_dir, group_id, num_epochs=3, rank=None) -> None:
@@ -22,7 +22,7 @@ class Node:
         self.num_epochs = num_epochs
         self.chk_dir = chk_dir
         self.group_id = group_id
-        self.device = torch.device(f'cuda:{rank}')
+        self.device = torch.device(f'cuda')
         self.einet = init_spn(self.device)
         self._load_data()
 
@@ -36,24 +36,27 @@ class Node:
         q = torch.zeros(config.num_vars)
         for i, v in query.items():
             q[i] = v
+        q = q.unsqueeze(0).to(self.device)
         
         if len(query) == config.num_vars:
             # all RVs are set to some value, get joint
             x = self.einet.forward(q)
-            return log_likelihoods(x)
+            return log_likelihoods(x).detach().squeeze().item()
         else:
             # some RVs are not set, get marginal
             ref = np.arange(config.num_vars)
             marg_idx = [i for i in ref if i not in list(query.keys())]
             self.einet.set_marginalization_idx(marg_idx)
             x = self.einet.forward(q)
-            return log_likelihoods(x)
+            return log_likelihoods(x).detach().squeeze().item()
 
     def train(self, return_spn=True):
         """
             Train SPN on local data
         """
-        self.einet = train(self.einet, self.train_loader, self.num_epochs, self.device, self.chk_dir)
+        self.trained = False
+        self.einet, self.losses = train(self.einet, self.train_loader, self.num_epochs, self.device, self.chk_dir)
+        self.trained = True
         if return_spn:
             return self.einet
 
@@ -61,8 +64,8 @@ class Node:
         """
             assign subset to this client
         """
-        self.train_data = Subset(self.train_data, train_inds)
-        self.test_data = Subset(self.test_data, test_inds)
+        self.train_data = Subset(self.train_data, ray.get(train_inds))
+        self.test_data = Subset(self.test_data, ray.get(test_inds))
         self.train_loader = DataLoader(self.train_data, batch_size=32)
         self.test_loader = DataLoader(self.test_data, batch_size=32)
 
@@ -71,6 +74,9 @@ class Node:
             Load data
         """
         self.train_data, self.test_data = get_medical_data()
+
+    def get_losses(self):
+        return self.trained
 
 
 def init_spn(device):
@@ -121,6 +127,7 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
     """
     Training loop to train the SPN. Follows EM-procedure.
     """
+    losses = []
     for epoch_count in range(num_epochs):
         einet.train()
 
@@ -129,13 +136,7 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
 
         total_ll = 0.0
         for i, (x, y) in enumerate(train_loader):
-            x = x.to(device)
-            x = x.permute((0, 2, 3, 1))
-            if mean is not None:
-                mean = mean.to(device)
-                x -= mean
-            x /= 255.
-            x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
+            print(x)
             x = x.to(device)
             outputs = einet.forward(x)
             ll_sample = EinsumNetwork.log_likelihoods(outputs)
@@ -144,6 +145,7 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
 
             einet.em_process_batch()
             total_ll += log_likelihood.detach().item()
+        losses.append(total_ll)
 
         einet.em_update()
-    return einet
+    return einet, losses

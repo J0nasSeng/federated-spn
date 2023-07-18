@@ -37,7 +37,7 @@ def cluster_data(train_loader, file):
     means = kmeans.cluster_centers_
     idx = kmeans.labels_
     #aidx = kmeans.predict(train_data.reshape(train_data.shape[0], -1))
-    pickle.dump((means, idx), open(f'./precomputed/clusters/{file}', 'wb'))
+    pickle.dump((means, idx, train_loader.dataset.indices), open(f'./precomputed/clusters/{file}', 'wb'))
     return means, idx, train_data
 
 transform = torchvision.transforms.Compose([torchvision.transforms.Resize((224, 224)), 
@@ -51,8 +51,8 @@ loader.partition()
 print("Clustering...")
 for c in range(15):
     train_data, val_data = loader.load_client_data(c)
-    train_loader = DataLoader(train_data, 128)
-    val_data = DataLoader(val_data, 128)
+    train_loader = DataLoader(train_data, 128, shuffle=False)
+    val_data = DataLoader(val_data, 128, shuffle=False)
     means, idx, train_x = cluster_data(train_loader, f'cluster_{c}')
     print(f"Compute means of client {c}...")
     means = compute_cluster_means(train_x, idx, f'mean_{c}')
