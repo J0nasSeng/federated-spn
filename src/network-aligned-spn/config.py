@@ -35,7 +35,7 @@ num_dims = 1
 depth = 2
 num_repetitions = 3
 
-num_epochs = 3
+num_epochs = 5
 batch_size = 64
 online_em_frequency = 2
 online_em_stepsize = 0.1

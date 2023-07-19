@@ -7,8 +7,8 @@ from einsum.EinsumNetwork import EinsumNetwork, Args, log_likelihoods
 from einsum.Graph import poon_domingos_structure, random_binary_trees
 from torch.utils.data import Subset, DataLoader
 from datasets import get_medical_data
+from rtpt import RTPT
 import config
-import json
 import os
 import torch
 import numpy as np
@@ -25,6 +25,8 @@ class Node:
         self.device = torch.device(f'cuda')
         self.einet = self._init_spn(self.device)
         self._load_data()
+        self._rtpt = RTPT('JS', 'FedSPN', num_epochs)
+        self._rtpt.start()
 
     def get_group_id(self):
         return self.group_id
@@ -60,7 +62,7 @@ class Node:
         self.losses = []
         for epoch_count in range(self.num_epochs):
             self.einet.train()
-
+            self._rtpt.step()
             total_ll = 0.0
             for i, (x, y) in enumerate(self.train_loader):
                 x = x.to(self.device)

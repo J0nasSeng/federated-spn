@@ -8,7 +8,7 @@ from rtpt import RTPT
 import networkx as nx
 import argparse
 import numpy as np
-from utils import flwr_params_to_numpy, save_image_stack, get_data_by_cluster
+from utils import flwr_params_to_numpy, save_image_stack, get_data_loader_mean
 import os
 import logging
 import sys
@@ -51,8 +51,12 @@ def main(dataset, num_clients, client_id, chk_dir, device):
             """
                 Fit SPN and send parameters to server
             """
-            means, idx, ds_idx, _ = cluster_data(self.train_loader, client_id)
-            einets, weights = train_mixture(idx, ds_idx, self.train_loader, config.num_epochs, device, chk_dir, means)
+            if config.grouping == 'label':
+                loaders = group_data_by_labels(self.train_loader)
+            elif config.grouping == 'cluster':
+                _, clusters, _, _ = cluster_data(self.train_loader, client_id)
+                loaders = group_data_by_clusters(self.train_loader, clusters)
+            einets, weights = train_mixture(rtpt, loaders, config.num_epochs, device, chk_dir)
             self.einet = EinetMixture.EinetMixture(weights, einets)
             samples = self.einet.sample(25, std_correction=0.0)
             samples = samples.reshape((-1, config.height, config.width, config.num_dims))
@@ -164,12 +168,34 @@ def compute_cluster_means(data, cluster_idx, num_clusters=1000):
         means[k, ...] = np.mean(data[cluster_idx == k, ...].astype(np.float32), 0)
     return means
 
+def group_data_by_clusters(train_loader: DataLoader, clusters):
+    loaders = []
+    for c in torch.unique(clusters):
+        idx = torch.argwhere(clusters == c).flatten()
+        subset = Subset(train_loader.dataset, idx)
+        loader = DataLoader(subset, train_loader.batch_size, num_workers=1, persistent_workers=True)
+        loaders.append(loader)
+    return loaders
+
+def group_data_by_labels(train_loader: DataLoader):
+    group_dict = {l: [] for l in range(1000)} # imagenet has 1000 classes
+    for i, (_, y) in enumerate(iter(train_loader.dataset)):
+        group_dict[y].append(i)
+    
+    data_loaders = []
+    for _, idx in group_dict.items():
+        subs = Subset(train_loader.dataset, idx)
+        loader = DataLoader(subs, train_loader.batch_size, num_workers=1, persistent_workers=True)
+        data_loaders.append(loader)
+    
+    return data_loaders
+
 def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_model=True):
 
     """
     Training loop to train the SPN. Follows EM-procedure.
     """
-    logging.info('Starting Training...')
+    #logging.info('Starting Training...')
     for epoch_count in range(num_epochs):
         einet.train()
 
@@ -194,36 +220,38 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
             einet.em_process_batch()
             total_ll += log_likelihood.detach().item()
 
-            if i % 20 == 0:
-                logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
+            #if i % 20 == 0:
+                #logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
         logging.info('Epoch {:03d} \t LL={:03f}'.format(epoch_count, total_ll))
 
         einet.em_update()
     return einet
 
-def train_mixture(cluster_idx, ds_idx, train_loader, num_epochs, device, chk_path, mean=None):
+def train_mixture(rtpt, train_loaders, num_epochs, device, chk_path):
     einets = []
     weights = []
-    mean = torch.tensor(mean, device=device)
-    for cluster in np.unique(cluster_idx):
-        train_data_inds = get_data_by_cluster(cluster_idx, ds_idx, cluster)
-        if len(train_data_inds) > 0:
-            train_data = Subset(train_loader.dataset, train_data_inds)
-            n_train_loader = DataLoader(train_data, config.batch_size, True, num_workers=1, persistent_workers=True)
-            spn = init_spn(device)
-            spn = train(spn, n_train_loader, num_epochs, device, f'{chk_path}/cluster_{cluster}/', 
-                        mean[cluster].reshape((config.width, config.height, config.num_dims)), save_model=False)
-            spn = spn.cpu() # free GPU memory
-            with torch.no_grad():
-                params = spn.einet_layers[0].ef_array.params
-                mu2 = params[..., 0:3] ** 2
-                params[..., 3:] -= mu2
-                params[..., 3:] = torch.clamp(params[..., 3:], config.exponential_family_args['min_var'], config.exponential_family_args['max_var'])
-                params[..., 0:3] += mean[cluster].reshape((config.width*config.height, 1, 1, 3)) / 255.
-                params[..., 3:] += params[..., 0:3] ** 2
-            weight = len(train_data_inds) / len(train_loader.dataset)
-            weights.append(weight)
-            einets.append(spn)
+    num_samples = sum([len(l)*l.batch_size for l in train_loaders])
+    logging.info(f'Train {len(train_loaders)} SPNs')
+    for i, loader in enumerate(train_loaders):
+        spn = init_spn(device)
+        logging.info(f'Training SPN on {len(loader)*loader.batch_size} samples.')
+        mean = get_data_loader_mean(loader)
+        mean = torch.tensor(mean, device=device)
+        spn = train(spn, loader, num_epochs, device, f'{chk_path}/spn_{i}/', 
+                    mean.reshape((config.width, config.height, config.num_dims)), save_model=False)
+        spn = spn.cpu() # free GPU memory
+        mean = mean.cpu()
+        with torch.no_grad():
+            params = spn.einet_layers[0].ef_array.params
+            mu2 = params[..., 0:3] ** 2
+            params[..., 3:] -= mu2
+            params[..., 3:] = torch.clamp(params[..., 3:], config.exponential_family_args['min_var'], config.exponential_family_args['max_var'])
+            params[..., 0:3] += mean.reshape((config.width*config.height, 1, 1, 3)) / 255.
+            params[..., 3:] += params[..., 0:3] ** 2
+        weight = len(loader)*loader.batch_size / num_samples
+        weights.append(weight)
+        einets.append(spn)
+        rtpt.step()
     return einets, weights
 
 def make_spn(params):

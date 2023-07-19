@@ -15,14 +15,17 @@ from datasets import get_medical_data
 from spn_leaf import SPNLeaf
 from spn.structure.Base import Sum, Product
 from spn.algorithms.Inference import log_likelihood
+from rtpt import RTPT
 import config
 import logging
 import sys
-import os
 
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
 format=log_format, datefmt='%m/%d %I:%M:%S %p')
+
+rtpt = RTPT('JS', 'FedSPN Driver', 3)
+rtpt.start()
 
 def train(train_data, test_data):
     """
@@ -50,11 +53,13 @@ def train(train_data, test_data):
         test_data_idx = np.array([x for x in test_data_idx if x not in test_subset])    
         assign_jobs.append(node.assign_subset.remote(list(train_subset), list(test_subset)))
     ray.get(assign_jobs)
+    rtpt.step()
 
     for c in range(config.num_clients):
         train_jobs.append(nodes[c].train.remote(return_spn=False))
     
     ray.get(train_jobs)
+    rtpt.step()
     for n in nodes:
         print(ray.get(n.get_losses.remote()))
 
@@ -90,5 +95,6 @@ sample_idx = np.random.randint(0, len(test_data))
 x_test, _ = test_data[sample_idx]
 query_dict = ray.put({i: v for i, v in enumerate(x_test)})
 p = infer(na_spn, query_dict, nodes)
+rtpt.step()
 
 print(p)

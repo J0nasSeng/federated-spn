@@ -34,12 +34,12 @@ num_vars = width*height
 num_dims = 3
 
 # 'binary-trees'
-depth = 3
-num_repetitions = 6
+depth = 2
+num_repetitions = 3
 
-num_epochs = 3
+num_epochs = 5
 batch_size = 32
-online_em_frequency = 50
+online_em_frequency = 10
 online_em_stepsize = 0.5
 num_clients = 15
 
@@ -48,6 +48,7 @@ checkpoint_freq = 2
 dataset_inds_file = 'indices.json'
 dataset = 'imagenet'
 data_skew = 0.
+grouping = 'label' # 'cluster'
 
 num_clusters = 100
 preprocessing = 'cluster', # 'mean'
