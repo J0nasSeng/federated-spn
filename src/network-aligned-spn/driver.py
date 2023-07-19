@@ -42,20 +42,19 @@ def train(train_data, test_data):
 
     for c in range(config.num_clients):
         logging.info(f'Train node {c}')
-        node = Node.remote('medical', chk_dir + f'/client_{c}', 1, num_epochs=3, rank=1)
+        node = Node.remote('medical', chk_dir + f'/client_{c}', 1, num_epochs=10, rank=1)
         nodes.append(node)
         train_subset = np.random.choice(train_data_idx, int(len(train_data) / config.num_clients), False)
         test_subset = np.random.choice(test_data_idx, int(len(test_data) / config.num_clients), False)
         train_data_idx = np.array([x for x in train_data_idx if x not in train_subset])
         test_data_idx = np.array([x for x in test_data_idx if x not in test_subset])    
         assign_jobs.append(node.assign_subset.remote(list(train_subset), list(test_subset)))
-    ray.wait(assign_jobs, num_returns=config.num_clients)
+    ray.get(assign_jobs)
 
     for c in range(config.num_clients):
-        train_jobs.append(nodes[c].train.remote(return_spn=False)) 
-
-    print(train_jobs)
-    ray.wait(train_jobs, num_returns=config.num_clients)
+        train_jobs.append(nodes[c].train.remote(return_spn=False))
+    
+    ray.get(train_jobs)
     for n in nodes:
         print(ray.get(n.get_losses.remote()))
 

@@ -4,7 +4,6 @@ import torch
 import errno
 from PIL import Image
 from numproto import proto_to_ndarray
-from torch.utils.data import DataLoader
 
 def mkdir_p(path):
     """Linux mkdir -p"""
@@ -83,7 +82,7 @@ def flwr_params_to_numpy(params):
 
     return parameters, adj, meta_info
 
-def get_data_by_cluster(dataloader: DataLoader, clusters, idx, cluster_n):
+def get_data_by_cluster(clusters, idx, cluster_n):
     data_idx = np.argwhere(clusters == cluster_n).flatten()
     subset_idx = idx[data_idx]
     return subset_idx

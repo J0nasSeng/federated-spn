@@ -51,8 +51,8 @@ def main(dataset, num_clients, client_id, chk_dir, device):
             """
                 Fit SPN and send parameters to server
             """
-            means, idx, _ = cluster_data(self.train_loader, client_id)
-            einets, weights = train_mixture(idx, self.train_loader, config.num_epochs, device, chk_dir, means)
+            means, idx, ds_idx, _ = cluster_data(self.train_loader, client_id)
+            einets, weights = train_mixture(idx, ds_idx, self.train_loader, config.num_epochs, device, chk_dir, means)
             self.einet = EinetMixture.EinetMixture(weights, einets)
             samples = self.einet.sample(25, std_correction=0.0)
             samples = samples.reshape((-1, config.height, config.width, config.num_dims))
@@ -135,9 +135,9 @@ def compute_dataset_mean(train_loader, client_id):
 def cluster_data(train_loader, client_id):
     train_data = torch.concat([x.permute((0, 2, 3, 1)) for x, _ in train_loader]).numpy()
     if os.path.isfile(f'./precomputed/clusters/cluster_{client_id}'):
-        means, idx = pickle.load(open(f'./precomputed/clusters/cluster_{client_id}', 'rb'))
+        means, idx, ds_idx = pickle.load(open(f'./precomputed/clusters/cluster_{client_id}', 'rb'))
         logging.info(f'Using precomputed clusters at ./precomputed/clusters/cluster_{client_id}')
-        return means, idx, train_data
+        return means, idx, ds_idx, train_data
     # path does not exist -> create
     os.makedirs(f'./precomputed/clusters/', exist_ok=True)
     logging.info('Compute clusters')
@@ -201,18 +201,19 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
         einet.em_update()
     return einet
 
-def train_mixture(cluster_idx, train_loader, num_epochs, device, chk_path, mean=None):
+def train_mixture(cluster_idx, ds_idx, train_loader, num_epochs, device, chk_path, mean=None):
     einets = []
     weights = []
     mean = torch.tensor(mean, device=device)
     for cluster in np.unique(cluster_idx):
-        train_data_inds = get_data_by_cluster(train_loader, cluster_idx, cluster)
+        train_data_inds = get_data_by_cluster(cluster_idx, ds_idx, cluster)
         if len(train_data_inds) > 0:
             train_data = Subset(train_loader.dataset, train_data_inds)
             n_train_loader = DataLoader(train_data, config.batch_size, True, num_workers=1, persistent_workers=True)
             spn = init_spn(device)
             spn = train(spn, n_train_loader, num_epochs, device, f'{chk_path}/cluster_{cluster}/', 
                         mean[cluster].reshape((config.width, config.height, config.num_dims)), save_model=False)
+            spn = spn.cpu() # free GPU memory
             with torch.no_grad():
                 params = spn.einet_layers[0].ef_array.params
                 mu2 = params[..., 0:3] ** 2

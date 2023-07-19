@@ -32,13 +32,13 @@ num_vars = 2988 # num variables of medical dataset
 num_dims = 1
 
 # 'binary-trees'
-depth = 3
-num_repetitions = 6
+depth = 2
+num_repetitions = 3
 
 num_epochs = 3
 batch_size = 64
-online_em_frequency = 50
-online_em_stepsize = 0.5
+online_em_frequency = 2
+online_em_stepsize = 0.1
 num_clients = 5
 
 checkpoint_freq = 2
