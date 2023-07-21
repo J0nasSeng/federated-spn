@@ -28,7 +28,7 @@ structure = 'binary-trees'
 pd_num_pieces = [4]
 #pd_num_pieces = [7]
 #pd_num_pieces = [8, 32]
-num_vars = 2988 # num variables of medical dataset
+num_vars = 1746 # num variables of corel5k dataset
 num_dims = 1
 
 # 'binary-trees'
@@ -36,15 +36,15 @@ depth = 2
 num_repetitions = 3
 
 num_epochs = 5
-batch_size = 64
-online_em_frequency = 2
-online_em_stepsize = 0.1
-num_clients = 5
+batch_size = 10
+online_em_frequency = 10
+online_em_stepsize = 0.5
+num_clients = 1
 
 checkpoint_freq = 2
 
 dataset_inds_file = 'indices.json'
-dataset = 'medical'
+dataset = 'corel5k'
 data_skew = 0.
 
 num_clusters = 100

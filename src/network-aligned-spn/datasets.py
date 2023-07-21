@@ -59,9 +59,11 @@ def preproc_arff_data(raw_data, labels):
 
 def get_categorical_data(path, name):
 
-    train = arff.load(open(path + "/categorical/" + name + "/" + name + "-train.arff", "r"))
-    test = arff.load(open(path + "/categorical/" + name + "/" + name + "-test.arff", "r"))
+    train = arff.load(path + "/categorical/" + name + "/" + name + "-train.arff")
+    test = arff.load(path + "/categorical/" + name + "/" + name + "-test.arff")
     labels = ET.parse(path + "/categorical/" + name + "/" + name + ".xml")
+
+    print(next(train))
 
     train_input, train_labels = preproc_arff_data(train, labels)
     test_input, test_labels = preproc_arff_data(test, labels)
@@ -77,3 +79,27 @@ def get_medical_data():
     train_ds, test_ds = TensorDataset(train_joint, torch.zeros(len(train_joint))), \
         TensorDataset(test_joint, torch.zeros(len(test_joint)))
     return train_ds, test_ds
+
+def get_corel5k_data():
+    train = arff.load("../../datasets/categorical/Corel5k/Corel5k-train.arff")
+    test = arff.load("../../datasets/categorical/Corel5k/Corel5k-test.arff")
+    labels = ET.parse("../../datasets/categorical/Corel5k/Corel5k.xml")
+
+    train_data = []
+    test_data = []
+    
+    for row in train:
+        x = [float(v) for k, v in row._data.items()]
+        train_data.append(x)
+    
+    for row in test:
+        x = [float(v) for k, v in row._data.items()]
+        test_data.append(x)
+
+    # labels will be ignored during training. Needed for torch compataibility
+    train_ds = TensorDataset(torch.tensor(train_data), torch.zeros(len(train_data)))
+    test_ds = TensorDataset(torch.tensor(test_data), torch.zeros(len(test_data)))
+    return train_ds, test_ds
+
+
+

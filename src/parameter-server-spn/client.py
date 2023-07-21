@@ -35,8 +35,9 @@ def main(dataset, num_clients, client_id, chk_dir, device):
 
         def __init__(self):
             self.device = device
-            self.train_loader = DataLoader(train_data, config.batch_size, True, num_workers=1, persistent_workers=True)
-            self.val_loader = DataLoader(val_data, config.batch_size, True, num_workers=1, persistent_workers=True)
+            self.train_loader = DataLoader(train_data, config.batch_size, True, num_workers=0, persistent_workers=False)
+            self.val_loader = DataLoader(val_data, config.batch_size, True, num_workers=0, persistent_workers=False)
+            logging.info(f'DATASET-SIZE: {len(train_data)}')
             self.einet = init_spn(device)
 
         def set_parameters(self, parameters):
@@ -98,7 +99,7 @@ def init_spn(device):
 
     if config.structure == 'poon-domingos':
         pd_delta = [[config.height / d, config.width / d] for d in config.pd_num_pieces]
-        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=[8], axes=[1])
+        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=[4], axes=[1])
     elif config.structure == 'binary-trees':
         graph = Graph.random_binary_trees(num_var=config.num_vars, depth=config.depth, num_repetitions=config.num_repetitions)
     elif config.structure == 'flat-binary-tree':
@@ -170,10 +171,10 @@ def compute_cluster_means(data, cluster_idx, num_clusters=1000):
 
 def group_data_by_clusters(train_loader: DataLoader, clusters):
     loaders = []
-    for c in torch.unique(clusters):
-        idx = torch.argwhere(clusters == c).flatten()
+    for c in np.unique(clusters):
+        idx = np.argwhere(clusters == c).flatten()
         subset = Subset(train_loader.dataset, idx)
-        loader = DataLoader(subset, train_loader.batch_size, num_workers=1, persistent_workers=True)
+        loader = DataLoader(subset, train_loader.batch_size, num_workers=0, persistent_workers=False)
         loaders.append(loader)
     return loaders
 
@@ -185,7 +186,7 @@ def group_data_by_labels(train_loader: DataLoader, num_classes):
     data_loaders = []
     for _, idx in group_dict.items():
         subs = Subset(train_loader.dataset, idx)
-        loader = DataLoader(subs, train_loader.batch_size, num_workers=1, persistent_workers=True)
+        loader = DataLoader(subs, train_loader.batch_size, num_workers=0, persistent_workers=False)
         data_loaders.append(loader)
     
     return data_loaders
@@ -206,11 +207,11 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
         for i, (x, y) in enumerate(train_loader):
             x = x.to(device)
             x = x.permute((0, 2, 3, 1))
+            x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
             if mean is not None:
                 mean = mean.to(device)
                 x -= mean
             x /= 255.
-            x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
             x = x.to(device)
             outputs = einet.forward(x)
             ll_sample = EinsumNetwork.log_likelihoods(outputs)
@@ -236,9 +237,9 @@ def train_mixture(rtpt, train_loaders, num_epochs, device, chk_path):
         spn = init_spn(device)
         logging.info(f'Training SPN on {len(loader)*loader.batch_size} samples.')
         mean = get_data_loader_mean(loader)
-        mean = torch.tensor(mean, device=device)
+        mean = mean.to(device)
         spn = train(spn, loader, num_epochs, device, f'{chk_path}/spn_{i}/', 
-                    mean.reshape((config.width, config.height, config.num_dims)), save_model=False)
+                    mean, save_model=False)
         spn = spn.cpu() # free GPU memory
         mean = mean.cpu()
         with torch.no_grad():
@@ -246,7 +247,7 @@ def train_mixture(rtpt, train_loaders, num_epochs, device, chk_path):
             mu2 = params[..., 0:3] ** 2
             params[..., 3:] -= mu2
             params[..., 3:] = torch.clamp(params[..., 3:], config.exponential_family_args['min_var'], config.exponential_family_args['max_var'])
-            params[..., 0:3] += mean.reshape((config.width*config.height, 1, 1, 3)) / 255.
+            params[..., 0:3] += mean.reshape((config.width*config.height, 1, 1, config.num_dims)) / 255.
             params[..., 3:] += params[..., 0:3] ** 2
         weight = len(loader)*loader.batch_size / num_samples
         weights.append(weight)

@@ -6,14 +6,15 @@ import ray
 from einsum.EinsumNetwork import EinsumNetwork, Args, log_likelihoods
 from einsum.Graph import poon_domingos_structure, random_binary_trees
 from torch.utils.data import Subset, DataLoader
-from datasets import get_medical_data
+from datasets import get_medical_data, get_corel5k_data
 from rtpt import RTPT
 import config
 import os
 import torch
 import numpy as np
 
-@ray.remote(num_gpus=1)
+n_gpus = 1 if torch.cuda.is_available() else 0
+@ray.remote(num_gpus=n_gpus)
 class Node:
 
     def __init__(self, dataset, chk_dir, group_id, num_epochs=3, rank=None) -> None:
@@ -22,7 +23,7 @@ class Node:
         self.num_epochs = num_epochs
         self.chk_dir = chk_dir
         self.group_id = group_id
-        self.device = torch.device(f'cuda')
+        self.device = torch.device(f'cuda') if torch.cuda.is_available() else torch.device('cpu')
         self.einet = self._init_spn(self.device)
         self._load_data()
         self._rtpt = RTPT('JS', 'FedSPN', num_epochs)
@@ -90,7 +91,7 @@ class Node:
         """
             Load data
         """
-        self.train_data, self.test_data = get_medical_data()
+        self.train_data, self.test_data = get_corel5k_data()
 
     def get_losses(self):
         return self.losses

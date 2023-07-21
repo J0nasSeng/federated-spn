@@ -19,7 +19,7 @@ classes = [7]
 # classes = [2, 3, 5, 7]
 # classes = None
 
-K = 12
+K = 30
 
 structure = 'poon-domingos'
 #structure = 'binary-trees'
@@ -37,18 +37,18 @@ num_dims = 3
 depth = 2
 num_repetitions = 3
 
-num_epochs = 5
+num_epochs = 10
 batch_size = 32
-online_em_frequency = 10
+online_em_frequency = 50
 online_em_stepsize = 0.5
-num_clients = 5
+num_clients = 1
 
 checkpoint_freq = 2
 
 dataset_inds_file = 'indices.json'
 dataset = 'svhn'
 data_skew = 0.
-grouping = 'label' # 'cluster'
+grouping = 'cluster' # 'cluster'
 num_classes = 10
 
 num_clusters = 100

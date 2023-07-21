@@ -11,7 +11,7 @@ import ray
 import time
 import numpy as np
 from client import Node
-from datasets import get_medical_data
+from datasets import get_medical_data, get_corel5k_data
 from spn_leaf import SPNLeaf
 from spn.structure.Base import Sum, Product
 from spn.algorithms.Inference import log_likelihood
@@ -82,7 +82,7 @@ def build_network_aligned_spn():
     return spn
 
 # load data 
-train_data, test_data = get_medical_data()
+train_data, test_data = get_corel5k_data()
 
 # train SPNs
 nodes = train(train_data, test_data)
