@@ -19,7 +19,7 @@ classes = [7]
 # classes = [2, 3, 5, 7]
 # classes = None
 
-K = 40
+K = 12
 
 structure = 'poon-domingos'
 #structure = 'binary-trees'
@@ -28,8 +28,8 @@ structure = 'poon-domingos'
 pd_num_pieces = [4]
 #pd_num_pieces = [7]
 #pd_num_pieces = [8, 32]
-width = 224
-height = 224
+width = 32
+height = 32
 num_vars = width*height
 num_dims = 3
 
@@ -41,14 +41,15 @@ num_epochs = 5
 batch_size = 32
 online_em_frequency = 10
 online_em_stepsize = 0.5
-num_clients = 15
+num_clients = 5
 
 checkpoint_freq = 2
 
 dataset_inds_file = 'indices.json'
-dataset = 'imagenet'
+dataset = 'svhn'
 data_skew = 0.
 grouping = 'label' # 'cluster'
+num_classes = 10
 
 num_clusters = 100
 preprocessing = 'cluster', # 'mean'

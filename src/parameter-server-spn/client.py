@@ -52,7 +52,7 @@ def main(dataset, num_clients, client_id, chk_dir, device):
                 Fit SPN and send parameters to server
             """
             if config.grouping == 'label':
-                loaders = group_data_by_labels(self.train_loader)
+                loaders = group_data_by_labels(self.train_loader, config.num_classes)
             elif config.grouping == 'cluster':
                 _, clusters, _, _ = cluster_data(self.train_loader, client_id)
                 loaders = group_data_by_clusters(self.train_loader, clusters)
@@ -177,8 +177,8 @@ def group_data_by_clusters(train_loader: DataLoader, clusters):
         loaders.append(loader)
     return loaders
 
-def group_data_by_labels(train_loader: DataLoader):
-    group_dict = {l: [] for l in range(1000)} # imagenet has 1000 classes
+def group_data_by_labels(train_loader: DataLoader, num_classes):
+    group_dict = {l: [] for l in range(num_classes)}
     for i, (_, y) in enumerate(iter(train_loader.dataset)):
         group_dict[y].append(i)
     
