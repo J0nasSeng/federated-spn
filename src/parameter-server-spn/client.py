@@ -59,10 +59,11 @@ def main(dataset, num_clients, client_id, chk_dir, device):
                 loaders = group_data_by_clusters(self.train_loader, clusters)
             einets, weights = train_mixture(rtpt, loaders, config.num_epochs, device, chk_dir)
             self.einet = EinetMixture.EinetMixture(weights, einets)
+            # TODO: Check why sampling yields weird 3x3 images (sampling from each mixture component works)
             samples = self.einet.sample(25, std_correction=0.0)
-            samples = samples.reshape((-1, config.height, config.width, config.num_dims))
+            samples = samples.reshape(-1, config.height, config.width, config.num_dims)
             img_path = os.path.join(chk_dir, 'samples.png')
-            save_image_stack(samples, 5, 5, img_path, margin_gray_val=0.)
+            save_image_stack(samples, 5, 5, img_path, margin_gray_val=0., frame=2, frame_gray_val=0.0)
             # collect parameters and send back to server
             params = self.get_parameters()
             # log final model
@@ -99,7 +100,7 @@ def init_spn(device):
 
     if config.structure == 'poon-domingos':
         pd_delta = [[config.height / d, config.width / d] for d in config.pd_num_pieces]
-        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=[4], axes=[1])
+        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=[8], axes=[1])
     elif config.structure == 'binary-trees':
         graph = Graph.random_binary_trees(num_var=config.num_vars, depth=config.depth, num_repetitions=config.num_repetitions)
     elif config.structure == 'flat-binary-tree':
@@ -210,11 +211,11 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
             x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
             if mean is not None:
                 mean = mean.to(device)
+                mean = mean.reshape(1, config.num_vars, config.num_dims)
                 x -= mean
             x /= 255.
-            x = x.to(device)
-            outputs = einet.forward(x)
-            ll_sample = EinsumNetwork.log_likelihoods(outputs)
+            ll_sample = einet.forward(x)
+            #ll_sample = EinsumNetwork.log_likelihoods(outputs)
             log_likelihood = ll_sample.sum()
             log_likelihood.backward()
 
@@ -223,6 +224,7 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
 
             #if i % 20 == 0:
                 #logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
+        total_ll = total_ll / (len(train_loader) * train_loader.batch_size)
         logging.info('Epoch {:03d} \t LL={:03f}'.format(epoch_count, total_ll))
 
         einet.em_update()
@@ -233,7 +235,7 @@ def train_mixture(rtpt, train_loaders, num_epochs, device, chk_path):
     weights = []
     num_samples = sum([len(l)*l.batch_size for l in train_loaders])
     logging.info(f'Train {len(train_loaders)} SPNs')
-    for i, loader in enumerate(train_loaders):
+    for i, loader in enumerate(train_loaders): # TODO: check clusters
         spn = init_spn(device)
         logging.info(f'Training SPN on {len(loader)*loader.batch_size} samples.')
         mean = get_data_loader_mean(loader)

@@ -89,6 +89,7 @@ def get_data_by_cluster(clusters, cluster_n):
 def get_data_loader_mean(loader):
     mean = None
     for x, _ in loader:
+        x = x.permute((0, 2, 3, 1))
         if mean is None:
             mean = torch.mean(x, 0)
         else:

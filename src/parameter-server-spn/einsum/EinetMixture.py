@@ -33,7 +33,7 @@ class EinetMixture:
         for k in range(N):
             rand_idx = np.sum(np.random.rand() > np.cumsum(self.p[0:-1]))
             s = self.einets[rand_idx].sample(num_samples=1, **kwargs).cpu().numpy()
-            samples[k, ...] = s.transpose(0, 2, 1)
+            samples[k, ...] = s.permute(0, 2, 1)
         return samples
 
     def conditional_sample(self, x, marginalize_idx, **kwargs):
