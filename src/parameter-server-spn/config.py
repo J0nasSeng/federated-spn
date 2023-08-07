@@ -1,7 +1,4 @@
 from einsum import EinsumNetwork
-import time
-import shutil
-import os
 
 #exponential_family = EinsumNetwork.BinomialArray
 #exponential_family = EinsumNetwork.CategoricalArray
@@ -37,7 +34,7 @@ num_dims = 3
 depth = 2
 num_repetitions = 3
 
-num_epochs = 10
+num_epochs = 5
 batch_size = 10
 online_em_frequency = 50
 online_em_stepsize = 0.5
@@ -48,7 +45,7 @@ checkpoint_freq = 2
 dataset_inds_file = 'indices.json'
 dataset = 'svhn'
 data_skew = 0.
-grouping = 'cluster' # 'cluster'
+grouping = 'label' # 'cluster'
 num_classes = 10
 
 num_clusters = 100

@@ -29,11 +29,11 @@ class EinetMixture:
         self.num_dims = list(num_dims)[0]
 
     def sample(self, N, **kwargs):
-        samples = np.zeros((N, self.num_dims, self.num_var))
+        samples = np.zeros((N, self.num_var, self.num_dims))
         for k in range(N):
             rand_idx = np.sum(np.random.rand() > np.cumsum(self.p[0:-1]))
             s = self.einets[rand_idx].sample(num_samples=1, **kwargs).cpu().numpy()
-            samples[k, ...] = s.permute(0, 2, 1)
+            samples[k, ...] = s[0]
         return samples
 
     def conditional_sample(self, x, marginalize_idx, **kwargs):
