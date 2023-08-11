@@ -17,6 +17,6 @@ def forward_ll(node, data=None, **kwargs):
     """
         data = log likelihood of sub-spns -> just return
     """
-    return data[:, node.scope]
+    return np.exp(data[:, node.scope])
 
 add_node_likelihood(SPNLeaf, lambda_func=forward_ll)

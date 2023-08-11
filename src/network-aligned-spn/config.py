@@ -28,17 +28,17 @@ structure = 'binary-trees'
 pd_num_pieces = [4]
 #pd_num_pieces = [7]
 #pd_num_pieces = [8, 32]
-num_vars = 1746 # num variables of corel5k dataset
+num_vars = 15 # num variables of corel5k dataset
 num_dims = 1
 
 # 'binary-trees'
-depth = 2
-num_repetitions = 3
+depth = 4
+num_repetitions = 5
 
 num_epochs = 5
 batch_size = 10
 online_em_frequency = 10
-online_em_stepsize = 0.5
+online_em_stepsize = 0.05
 num_clients = 1
 
 checkpoint_freq = 2

@@ -10,15 +10,19 @@
 import ray
 import time
 import numpy as np
-from client import Node
-from datasets import get_medical_data, get_corel5k_data
+from client import FlowNode
+from datasets.datasets import Avazu, Income
 from spn_leaf import SPNLeaf
 from spn.structure.Base import Sum, Product
-from spn.algorithms.Inference import log_likelihood
+from spn.algorithms.Inference import log_likelihood, sum_log_likelihood
 from rtpt import RTPT
 import config
 import logging
 import sys
+import warnings
+import argparse
+
+warnings.filterwarnings('ignore')
 
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
@@ -27,7 +31,7 @@ format=log_format, datefmt='%m/%d %I:%M:%S %p')
 rtpt = RTPT('JS', 'FedSPN Driver', 3)
 rtpt.start()
 
-def train(train_data, test_data):
+def train(train_data):
     """
         This function starts a local ray cluster, splits data into equal sized
         subsets and trains one client/worker on each subset.
@@ -35,23 +39,18 @@ def train(train_data, test_data):
         node.query(...)
     """
     ray.init()
-    run_id = str(round(time.time() * 1000))
-    chk_dir = f'./checkpoints/{run_id}'
     train_data_idx = np.arange(len(train_data))
-    test_data_idx = np.arange(len(test_data))
     train_jobs = []
     assign_jobs = []
     nodes = []
 
     for c in range(config.num_clients):
         logging.info(f'Train node {c}')
-        node = Node.remote('medical', chk_dir + f'/client_{c}', 1, num_epochs=10, rank=1)
+        node = FlowNode.remote('income', 1, rank=1)
         nodes.append(node)
         train_subset = np.random.choice(train_data_idx, int(len(train_data) / config.num_clients), False)
-        test_subset = np.random.choice(test_data_idx, int(len(test_data) / config.num_clients), False)
-        train_data_idx = np.array([x for x in train_data_idx if x not in train_subset])
-        test_data_idx = np.array([x for x in test_data_idx if x not in test_subset])    
-        assign_jobs.append(node.assign_subset.remote(list(train_subset), list(test_subset)))
+        train_data_idx = np.array([x for x in train_data_idx if x not in train_subset])  
+        assign_jobs.append(node.assign_subset.remote(list(train_subset)))
     ray.get(assign_jobs)
     rtpt.step()
 
@@ -60,8 +59,6 @@ def train(train_data, test_data):
     
     ray.get(train_jobs)
     rtpt.step()
-    for n in nodes:
-        print(ray.get(n.get_losses.remote()))
 
     return nodes
 
@@ -74,27 +71,61 @@ def infer(spn, query, nodes):
     network_aligned_in_data = np.array(node_res).reshape(1, -1)
     return log_likelihood(spn, network_aligned_in_data)
 
-
-def build_network_aligned_spn():
+def build_spn_horizontal(nodes):
+    # TODO: Build RAT-SPN
     leafs = [SPNLeaf(c) for c in range(config.num_clients)]
-    weights = [1/config.num_clients]*config.num_clients
+    ds_len = [ray.get(node.get_dataset_len.remote()) for node in nodes]
+    norm = sum(ds_len)
+    weights = [d / n for d, n in zip(ds_len, norm)]
     spn = Sum(weights, leafs)
     return spn
 
-# load data 
-train_data, test_data = get_corel5k_data()
+def build_spn_hybrid(feature_subspaces):
+    spn = Product()
+    for clients, intersct in feature_subspaces:
+        if len(clients) > 0:
+            s = Sum()
+            subspns = [SPNLeaf(intersct) for _ in clients]
+            s.children = subspns
+            spn.children += [s]
+        else:
+            client_spn = SPNLeaf(intersct)
+            spn.children += [client_spn]
 
-# train SPNs
-nodes = train(train_data, test_data)
+def main(args):
 
-# create network-aligned SPN
-na_spn = build_network_aligned_spn()
+    # load data 
+    train_data = Income('../../datasets/income/', split='train').features
 
-# get probability of some test sample
-sample_idx = np.random.randint(0, len(test_data))
-x_test, _ = test_data[sample_idx]
-query_dict = ray.put({i: v for i, v in enumerate(x_test)})
-p = infer(na_spn, query_dict, nodes)
-rtpt.step()
+    # train SPNs
+    nodes = train(train_data)
 
-print(p)
+    # create network-aligned SPN
+    if args.setting == 'horizontal':
+        na_spn = build_spn_horizontal()
+    elif args.setting == 'hybrid':
+        # TODO: get feature sub spaces
+        na_spn = build_spn_hybrid()
+    elif args.setting == 'vertical':
+        # TODO: implement
+        pass
+
+    # get probability of some test sample
+    test_data = Income('../../datasets/income/', split='test')
+    sample_idx = np.random.randint(0, len(test_data))
+    x_test = test_data[sample_idx].numpy()
+    query_dict = ray.put({i: v for i, v in enumerate(x_test)})
+    p = infer(na_spn, query_dict, nodes)
+    rtpt.step()
+
+    print(p)
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--setting', default='horizontal')
+parser.add_argument('--num-clients', default=5)
+parser.add_argument('--dataset', default='income')
+
+args = parser.parse_args()
+
+main(args)

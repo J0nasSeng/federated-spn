@@ -6,16 +6,23 @@ import ray
 from einsum.EinsumNetwork import EinsumNetwork, Args, log_likelihoods
 from einsum.Graph import poon_domingos_structure, random_binary_trees
 from torch.utils.data import Subset, DataLoader
-from datasets import get_medical_data, get_corel5k_data
 from rtpt import RTPT
 import config
 import os
 import torch
 import numpy as np
+from spn.algorithms.LearningWrappers import learn_mspn
+from datasets.datasets import Avazu, Income
+from spn.structure.Base import Context
+from spn.structure.StatisticalTypes import MetaType
+from spn.algorithms.Inference import log_likelihood
+from spn.algorithms.Marginalization import marginalize
+from spn.algorithms.EM import EM_optimization
+import context
 
 n_gpus = 1 if torch.cuda.is_available() else 0
 @ray.remote(num_gpus=n_gpus)
-class Node:
+class EinetNode:
 
     def __init__(self, dataset, chk_dir, group_id, num_epochs=3, rank=None) -> None:
         self.rank = rank
@@ -160,3 +167,83 @@ class Node:
 
             einet.em_update()
         return einet, losses
+    
+@ray.remote
+class FlowNode:
+
+    def __init__(self, dataset, group_id, rank=None) -> None:
+        self.rank = rank
+        self.dataset = dataset
+        self.group_id = group_id
+        self._load_data()
+        self._rtpt = RTPT('JS', 'FedSPN', 1)
+        self._rtpt.start()
+        self.feature_index = []
+        self.subspaces = []
+        self.spns = {}
+
+    def get_group_id(self):
+        return self.group_id
+    
+    def _query(self, spn, query):
+        """
+            Query SPN
+        """
+        q = np.zeros(config.num_vars)
+        for i, v in query.items():
+            q[i] = v
+        
+        if len(query) == config.num_vars:
+            # all RVs are set to some value, get joint
+            ll = log_likelihood(spn, q.reshape(1, -1))
+            return ll
+        else:
+            # some RVs are not set, get marginal
+            keep = list(query.keys())
+            marg_spn = marginalize(spn, keep)
+            return log_likelihood(marg_spn, q)
+        
+    def query(self, subspace, query):
+        spn = self.spns[tuple(subspace)]
+        return self._query(spn, query)
+
+    def train(self):
+        for subspace in self.subspaces:
+            ctxt = Context(meta_types=[context.ctxts[self.dataset][i] for i in subspace])
+            ctxt.add_domains(self.train_data[:, subspace])
+            spn = learn_mspn(self.train_data[:, subspace], ctxt)
+            EM_optimization(spn, self.train_data[:, subspace])
+            self.spns[tuple(subspace)] = spn
+
+    def assign_subset(self, train_inds):
+        """
+            assign subset to this client
+        """
+        self.X = self.train_data.features[train_inds, :].numpy()
+        self.y = self.train_data.targets[train_inds].numpy()
+        self.train_data = np.hstack((self.X, self.y.reshape(-1, 1)))
+
+    def get_feature_ids(self):
+        """
+            Retrieve feature ids hold by the client
+        """
+
+    def get_dataset_len(self):
+        return len(self.train_data)
+
+    def _load_data(self):
+        """
+            Load data
+        """
+        if self.dataset == 'avazu':
+            self.train_data = Avazu('../../datasets/avazu/', split='train')
+        elif self.dataset == 'income':
+            self.train_data = Income('../../datasets/income/', split='train')
+        else:
+            raise ValueError(f'No such dataset: {self.dataset}')
+        
+    def get_feature_space(self):
+        return self.feature_index
+    
+    def add_subspace(self, subspace):
+        self.subspaces.append(subspace)

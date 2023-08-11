@@ -5,6 +5,8 @@ import errno
 from PIL import Image
 from numproto import proto_to_ndarray
 from torch.utils.data import DataLoader
+import networkx as nx
+import itertools
 
 def mkdir_p(path):
     """Linux mkdir -p"""
@@ -59,29 +61,65 @@ def sample_matrix_categorical(p):
         rand_idx = torch.sum(rand > cp, -1).long()
         return rand_idx
     
-class ProtobufNumpyArray:
-    """
-        Class needed to deserialize numpy-arrays coming from flower
-    """
-    def __init__(self, bytes) -> None:
-        self.ndarray = bytes
 
-def flwr_params_to_numpy(params):
-    meta_info = params.tensors[-1]
-    adj = params.tensors[-2]
-    parameter_bytes = params.tensors[:-2]
-    pnpa_meta = ProtobufNumpyArray(meta_info)
-    pnpa_adj = ProtobufNumpyArray(adj)
+class Region:
 
-    meta_info = proto_to_ndarray(pnpa_meta)
-    adj = proto_to_ndarray(pnpa_adj)
+    def __init__(self, scope):
+        self.scope = scope
+
+class Partition:
+
+    def __init__(self, scope) -> None:
+        self.scope = scope
+
+def build_rand_region_graph(r, variables):
+    """
+        Build a region graph s.t. each region has one child (partition) and
+        each partition has two childs (regions).
+
+        TODO: Isn't a binary tree too simple? shouldn't there be interactions?
+
+        :param r: number of region layers
+        :param d: number of partition childs being created for each region
+    """
+    G = nx.DiGraph()
+    root = Region(variables)
+    G.add_node(root)
+    curr_children = [root]
+    for depth in range(1, r):
+        new_children = []
+        for c in curr_children:
+            if not len(c.scope) == 1:
+                split_idx = np.random.randint(1, len(c.scope) - 1)
+                s1, s2 = c.scope[:split_idx], c.scope[split_idx:]
+                p = Partition(c.scope)
+                r1 = Region(s1)
+                r2 = Region(s2)
+                G.add_edge(c, p)
+                G.add_edge(p, r1)
+                G.add_edge(p, r2)
+                new_children += [r1, r2]
+        curr_children = new_children
+    return G
+
+def split_feature_space(space, clients):
+    """
+        Find disjoint subspaces s.t. clients can train SPNs independently and 
+        server can merge them in a pre-defined structure
+    """
+    p = list(itertools.combinations(clients))
+    p.sort(key=len)
+    feature_subsets = []
+    for rho in p:
+        client_features = [c.get_feature_space.remote() for c in rho]
+        intersct = set.intersection(*map(set, client_features))
+        if len(intersct) > 0:
+            feature_subsets.append((rho, intersct))
     
-    parameters = []
-    for p in parameter_bytes:
-        param_bytes = ProtobufNumpyArray(p)
-        parameters.append(proto_to_ndarray(param_bytes))
+    for rho, subspace in feature_subsets:
+        for c in rho:
+            c.add_subspace.remote(subspace)
 
-    return parameters, adj, meta_info
 
 def get_data_by_cluster(dataloader: DataLoader, clusters, idx, cluster_n):
     data_idx = np.argwhere(clusters == cluster_n).flatten()
