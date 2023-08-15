@@ -171,19 +171,14 @@ class EinetNode:
 @ray.remote
 class FlowNode:
 
-    def __init__(self, dataset, group_id, rank=None) -> None:
-        self.rank = rank
+    def __init__(self, dataset) -> None:
         self.dataset = dataset
-        self.group_id = group_id
         self._load_data()
         self._rtpt = RTPT('JS', 'FedSPN', 1)
         self._rtpt.start()
         self.feature_index = []
         self.subspaces = []
         self.spns = {}
-
-    def get_group_id(self):
-        return self.group_id
     
     def _query(self, spn, query):
         """
@@ -212,7 +207,7 @@ class FlowNode:
             ctxt = Context(meta_types=[context.ctxts[self.dataset][i] for i in subspace])
             ctxt.add_domains(self.train_data[:, subspace])
             spn = learn_mspn(self.train_data[:, subspace], ctxt)
-            EM_optimization(spn, self.train_data[:, subspace])
+            EM_optimization(spn, self.train_data[:, subspace], iterations=3)
             self.spns[tuple(subspace)] = spn
 
     def assign_subset(self, train_inds):
@@ -230,7 +225,13 @@ class FlowNode:
 
     def get_dataset_len(self):
         return len(self.train_data)
-
+    
+    def get_spn(self, subspace):
+        return self.spns[subspace]
+    
+    def get_spns(self):
+        return self.spns
+    
     def _load_data(self):
         """
             Load data
@@ -245,5 +246,5 @@ class FlowNode:
     def get_feature_space(self):
         return self.feature_index
     
-    def add_subspace(self, subspace):
+    def assign_subspace(self, subspace):
         self.subspaces.append(subspace)

@@ -1,5 +1,8 @@
 from .datasets import TabularDataset
 import numpy as np
+from datasets.datasets import Avazu, Income
+from torchvision.datasets import MNIST
+import torchvision
 
 def split_tabular_vertical(dataset: TabularDataset, 
                    num_clients, p=None, seed=111):
@@ -34,3 +37,28 @@ def split_tabular_vertical(dataset: TabularDataset,
         client_datasets.append(ds)
     
     return client_datasets
+
+def get_data(ds, split='train'):
+    if ds == 'income':
+        dataset = Income('../../datasets/income/', split=split)
+        np_features = dataset.features.numpy()
+        np_targets = dataset.targets.numpy()
+        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
+        return data
+    elif ds == 'mnist':
+        transform=torchvision.transforms.Compose([
+                               torchvision.transforms.ToTensor(),
+                               torchvision.transforms.Normalize(
+                                 (0.1307,), (0.3081,)),
+                             ])
+        dataset = MNIST('../../datasets/mnist/', split == 'train', transform=transform)
+        imgs = dataset.data.reshape((-1, 28*28)).numpy()
+        targets = dataset.targets.reshape((-1, 1)).numpy()
+        data = np.hstack((imgs, targets))
+        return data
+    elif ds == 'avazu':
+        dataset = Avazu('../../datasets/income/', split=split)
+        np_features = dataset.features.numpy()
+        np_targets = dataset.targets.numpy()
+        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
+        return data

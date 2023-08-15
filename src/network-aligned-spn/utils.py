@@ -7,6 +7,7 @@ from numproto import proto_to_ndarray
 from torch.utils.data import DataLoader
 import networkx as nx
 import itertools
+from spn.structure.Base import get_nodes_by_type
 
 def mkdir_p(path):
     """Linux mkdir -p"""
@@ -89,9 +90,12 @@ def build_rand_region_graph(r, variables):
     for depth in range(1, r):
         new_children = []
         for c in curr_children:
-            if not len(c.scope) == 1:
-                split_idx = np.random.randint(1, len(c.scope) - 1)
-                s1, s2 = c.scope[:split_idx], c.scope[split_idx:]
+            if len(c.scope) > 1:
+                if len(c.scope) == 2:
+                    s1, s2 = [c.scope[0]], [c.scope[1]]
+                else:
+                    split_idx = np.random.randint(1, len(c.scope) - 1)
+                    s1, s2 = c.scope[:split_idx], c.scope[split_idx:]
                 p = Partition(c.scope)
                 r1 = Region(s1)
                 r2 = Region(s2)
@@ -100,6 +104,14 @@ def build_rand_region_graph(r, variables):
                 G.add_edge(p, r2)
                 new_children += [r1, r2]
         curr_children = new_children
+    
+    # if there's still a node with a scope over multiple variables, split it
+    nodes_to_split = [n for n in G.nodes if len(n.scope) > 1]
+    for n in nodes_to_split:
+        for s in n.scope:
+            p = Partition([s])
+            G.add_edge(n, p)
+
     return G
 
 def split_feature_space(space, clients):
@@ -125,3 +137,14 @@ def get_data_by_cluster(dataloader: DataLoader, clusters, idx, cluster_n):
     data_idx = np.argwhere(clusters == cluster_n).flatten()
     subset_idx = idx[data_idx]
     return subset_idx
+
+def reassign_node_ids(spn):
+    nodes = get_nodes_by_type(spn)
+    for id, n in enumerate(nodes):
+        n.id = id
+    return spn
+        
+
+#g = build_rand_region_graph(5, list(range(10)))
+#print(g)
+#nx.draw(g, with_labels=True)
