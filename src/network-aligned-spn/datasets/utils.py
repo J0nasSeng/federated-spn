@@ -3,6 +3,7 @@ import numpy as np
 from datasets.datasets import Avazu, Income
 from torchvision.datasets import MNIST
 import torchvision
+from fedlab.utils.dataset import BasicPartitioner, MNISTPartitioner
 
 def split_tabular_vertical(dataset: TabularDataset, 
                    num_clients, p=None, seed=111):
@@ -38,9 +39,39 @@ def split_tabular_vertical(dataset: TabularDataset,
     
     return client_datasets
 
-def get_data(ds, split='train'):
+def get_train_data(ds, num_clients, partitioning='iid'):
     if ds == 'income':
-        dataset = Income('../../datasets/income/', split=split)
+        dataset = Income('../../datasets/income/', split='train')
+        partitioner = IncomePartitioner(dataset.targets, num_clients, partition=partitioning)
+        np_features = dataset.features.numpy()
+        np_targets = dataset.targets.numpy()
+        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
+    elif ds == 'mnist':
+        transform=torchvision.transforms.Compose([
+                               torchvision.transforms.ToTensor(),
+                               torchvision.transforms.Normalize(
+                                 (0.1307,), (0.3081,)),
+                             ])
+        dataset = MNIST('../../datasets/', True, transform=transform, download=True)
+        partitioner = MNISTPartitioner(dataset.targets, num_clients, partition=partitioning)
+        imgs = dataset.data.reshape((-1, 28*28)).numpy().astype(np.float64)
+        imgs /= 255.
+        targets = dataset.targets.reshape((-1, 1)).numpy()
+        data = np.hstack((imgs, targets)).astype(np.float64)
+    elif ds == 'avazu':
+        dataset = Avazu('../../datasets/', split='train')
+        np_features = dataset.features.numpy()
+        np_targets = dataset.targets.numpy()
+        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
+
+    partitioned_data = []
+    for _, idx in partitioner.client_dict.items():
+        partitioned_data.append(data[idx])
+    return partitioned_data
+    
+def get_test_data(ds):
+    if ds == 'income':
+        dataset = Income('../../datasets/income/', split='test')
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))
@@ -51,14 +82,24 @@ def get_data(ds, split='train'):
                                torchvision.transforms.Normalize(
                                  (0.1307,), (0.3081,)),
                              ])
-        dataset = MNIST('../../datasets/mnist/', split == 'train', transform=transform)
+        dataset = MNIST('../../datasets/', False, transform=transform, download=True)
         imgs = dataset.data.reshape((-1, 28*28)).numpy()
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets))
         return data
     elif ds == 'avazu':
-        dataset = Avazu('../../datasets/income/', split=split)
+        dataset = Avazu('../../datasets/', split='test')
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))
         return data
+        
+class IncomePartitioner(BasicPartitioner):
+
+    num_classes = 2
+    num_features = 14
+
+class AvazuPartitioner(BasicPartitioner):
+
+    num_classes = 2
+    num_features = 16

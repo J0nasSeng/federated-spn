@@ -10,19 +10,20 @@
 import ray
 import numpy as np
 from client import FlowNode
-from datasets.utils import get_data
-from spn_leaf import SPNLeaf
-from spn.structure.Base import Sum, Product, get_nodes_by_type
-from spn.algorithms.Inference import log_likelihood, sum_log_likelihood
+from datasets.utils import get_train_data, get_test_data
+from spn.structure.Base import Sum, Product
+from spn.algorithms.Inference import log_likelihood
 from spn.algorithms.MPE import mpe
 from rtpt import RTPT
-import config
 import logging
 import sys
 import warnings
 import argparse
 from sklearn.metrics import accuracy_score
 import utils
+from spn_leaf import SPNLeaf
+from einet.layers import Sum as SumLayer
+import torch
 
 warnings.filterwarnings('ignore')
 
@@ -33,104 +34,181 @@ format=log_format, datefmt='%m/%d %I:%M:%S %p')
 rtpt = RTPT('JS', 'FedSPN Driver', 3)
 rtpt.start()
 
-def train_horizontal(train_data, args):
-    """
-        This function starts a local ray cluster, splits data into equal sized
-        subsets and trains one client/worker on each subset.
-        Each client creates its own local SPN which can then be queried using
-        node.query(...)
-    """
-    ray.init()
-    train_data_idx = np.arange(len(train_data))
-    train_jobs = []
-    assign_jobs = []
-    nodes = []
+class SPFlowServer:
 
-    for c in range(args.num_clients):
-        logging.info(f'Train node {c}')
-        node = FlowNode.remote(args.dataset)
-        nodes.append(node)
-        train_subset = np.random.choice(train_data_idx, int(len(train_data) / args.num_clients), False)
-        train_data_idx = np.array([x for x in train_data_idx if x not in train_subset])  
-        assign_jobs.append(node.assign_subset.remote(list(train_subset)))
-    ray.get(assign_jobs)
+    def train_horizontal(self, train_data, feature_spaces, args):
+        """
+            This function starts a local ray cluster, splits data into equal sized
+            subsets and trains one client/worker on each subset.
+            Each client creates its own local SPN.
+        """
+        ray.init()
+        train_jobs = []
+        assign_jobs = []
+        nodes = []
 
-    feature_space = list(range(0, train_data.shape[1]))
-    assign_jobs = []
-    for c in range(args.num_clients):
-        if args.setting == 'horizontal':
-            subspace = feature_space
-        node = nodes[c]
-        assign_jobs.append(node.assign_subspace.remote(subspace))
-    ray.get(assign_jobs)
+        for c in range(args.num_clients):
+            logging.info(f'Train node {c}')
+            node = FlowNode.remote(args.dataset)
+            nodes.append(node)
+            train_subset = train_data[c]
+            assign_jobs.append(node.assign_subset.remote(train_subset))
+        ray.get(assign_jobs)
+
+        feature_space = list(feature_spaces.values())[0]
+        assign_jobs = []
+        for c in range(args.num_clients):
+            if args.setting == 'horizontal':
+                subspace = feature_space
+            node = nodes[c]
+            assign_jobs.append(node.assign_subspace.remote(subspace))
+        ray.get(assign_jobs)
+            
+        rtpt.step()
+
+        for c in range(args.num_clients):
+            train_jobs.append(nodes[c].train.remote())
         
-    rtpt.step()
+        ray.get(train_jobs)
+        rtpt.step()
 
-    for c in range(args.num_clients):
-        train_jobs.append(nodes[c].train.remote())
-    
-    ray.get(train_jobs)
-    rtpt.step()
+        return nodes
 
-    return nodes
+    def classify(self, spn, test_data):
+        test_data[:, -1] = np.nan
+        pred = mpe(spn, test_data)
+        return pred[:, -1].flatten()
 
-def ll(spn, query, nodes):
-    """
-    evaluate network-aligned SPN
-    """
-    node_res_ref = [n.query.remote(query) for n in nodes]
-    node_res = [ray.get(nrr) for nrr in node_res_ref]
-    network_aligned_in_data = np.array(node_res).reshape(1, -1)
-    return log_likelihood(spn, network_aligned_in_data)
+    def build_spn_horizontal(self, nodes):
+        # leafs = [SPNLeaf(c) for c in range(config.num_clients)]
+        leaf_dict = [ray.get(node.get_spns.remote()) for node in nodes]
+        leafs = [list(l.values())[0] for l in leaf_dict]
+        ds_len = [ray.get(node.get_dataset_len.remote()) for node in nodes]
+        norm = sum(ds_len)
+        weights = [d / norm for d in ds_len]
+        spn = Sum(weights, leafs)
+        spn.scope = []
+        for c in spn.children:
+            spn.scope = list(set(spn.scope).union(set(c.scope)))
+        spn = utils.reassign_node_ids(spn)
+        return spn
 
-def most_probable_value(spn, input):
-    return mpe(spn, input)
-
-def build_spn_horizontal(nodes):
-    # leafs = [SPNLeaf(c) for c in range(config.num_clients)]
-    leaf_dict = [ray.get(node.get_spns.remote()) for node in nodes]
-    leafs = [list(l.values())[0] for l in leaf_dict]
-    ds_len = [ray.get(node.get_dataset_len.remote()) for node in nodes]
-    norm = sum(ds_len)
-    weights = [d / norm for d in ds_len]
-    spn = Sum(weights, leafs)
-    spn.scope = []
-    for c in spn.children:
-        spn.scope = list(set(spn.scope).union(set(c.scope)))
-    spn = utils.reassign_node_ids(spn)
-    return spn
-
-def build_spn(feature_subspaces, nodes):
-    if len(feature_subspaces) == 1:
-        # horizontal case
-        spn = build_spn_horizontal(nodes)
-    else:
-        # hybrid & vertical case
-        spn = Product()
-        for clients, subspace in feature_subspaces.items():
-            if len(clients) > 0:
-                s = Sum()
-                leafs = []
-                for c in clients:
-                    leafs.append(ray.get(nodes[c].get_spn.remote(subspace)))
+    def build_spn(self, feature_subspaces, nodes):
+        if len(feature_subspaces) == 1:
+            # horizontal case
+            spn = self.build_spn_horizontal(nodes)
+        else:
+            # hybrid & vertical case
+            spn = Product()
+            for clients, subspace in feature_subspaces.items():
+                if len(clients) > 0:
+                    s = Sum()
+                    leafs = []
+                    for c in clients:
+                        leafs.append(ray.get(nodes[c].get_spn.remote(subspace)))
                     s.children = leafs
                     spn.children += [s]
-            else:
-                node_idx = list(clients)[0]
-                client_spn = ray.get(nodes[node_idx].get_spn.remote(subspace))
-                spn.children += [client_spn]
+                else:
+                    node_idx = list(clients)[0]
+                    client_spn = ray.get(nodes[node_idx].get_spn.remote(subspace))
+                    spn.children += [client_spn]
 
-    return spn
+        return spn
 
-def main(args):
+class EinsumServer:
 
+    def train_horizontal(train_data, feature_spaces, args):
+        """
+            Train FedSPN in horizontal scenario with Einsum networks as SPN implementation on client side.
+        """
+        ray.init()
+        train_jobs = []
+        assign_jobs = []
+        nodes = []
+
+        for c in range(args.num_clients):
+            logging.info(f'Train node {c}')
+            node = FlowNode.remote(args.dataset)
+            nodes.append(node)
+            train_subset = train_data[c]
+            assign_jobs.append(node.assign_subset.remote(train_subset))
+        ray.get(assign_jobs)
+
+        feature_space = list(feature_spaces.values())[0]
+        assign_jobs = []
+        for c in range(args.num_clients):
+            node = nodes[c]
+            assign_jobs.append(node.assign_subspace.remote(feature_space))
+        ray.get(assign_jobs)
+            
+        rtpt.step()
+
+        for c in range(args.num_clients):
+            train_jobs.append(nodes[c].train.remote())
+        
+        ray.get(train_jobs)
+        rtpt.step()
+
+        return nodes
+
+    def build_spn(self, feature_subspaces, nodes):
+        """
+            Build network-aligned SPN
+        """
+        if len(feature_subspaces) == 1:
+            # horizontal case
+            spn, client_spns = self.build_spn_horizontal(nodes)
+        else:
+            # hybrid & vertical case
+            spn = Product()
+            client_spns = []
+            for clients, subspace in feature_subspaces.items():
+                if len(clients) > 0:
+                    s = Sum()
+                    leafs = []
+                    for c in clients:
+                        client_spn = ray.get(nodes[c].get_spn.remote(subspace))
+                        client_spns.append(client_spn)
+                        leafs.append(SPNLeaf(subspace))
+                    s.children = leafs
+                    spn.children += [s]
+                else:
+                    node_idx = list(clients)[0]
+                    client_spn = ray.get(nodes[node_idx].get_spn.remote(subspace))
+                    client_spns.append(client_spn)
+                    spn.children += [SPNLeaf(subspace)]
+
+        return spn, client_spns
+    
+    def build_spn_horizontal(self, nodes):
+        client_spns = [ray.get(node.get_spns.remote()) for node in nodes]
+        client_spns = [list(d.values())[0] for d in client_spns]
+        ds_len = [ray.get(node.get_dataset_len.remote()) for node in nodes]
+        norm = sum(ds_len)
+        weights = [d / norm for d in ds_len]
+        num_classes = client_spns[0].config.num_classes
+        spn = SumLayer(num_classes*len(nodes), 1, num_classes)
+        spn.weights = torch.tensor(weights)
+        return spn, client_spns
+
+    def classify(self, client_spns, spn, test_data):
+        """
+            Classify test_data instances
+        """
+        client_outs = torch.concat([s(test_data) for s in client_spns], dim=1)
+        final_out = spn(client_outs)
+        return torch.argmax(final_out, dim=1)
+
+
+def main_learned_structure(args):
     # load data 
-    train_data = get_data(args.dataset, 'train')
+    train_data = get_train_data(args.dataset, args.num_clients, args.sample_partitioning)
+    server = SPFlowServer()
     
     # train and create network aligned SPN
     if args.setting == 'horizontal':
-        feature_space = {tuple(list(range(args.num_clients))): list(range(train_data.shape[1]))}
-        nodes = train_horizontal(train_data, args)
+        feature_space = {tuple(list(range(args.num_clients))): list(range(train_data[0].shape[1]))}
+        nodes = server.train_horizontal(train_data, feature_space, args)
     elif args.setting == 'hybrid':
         # TODO: get feature sub spaces
         pass
@@ -138,18 +216,32 @@ def main(args):
         # TODO: implement
         pass
 
-    na_spn = build_spn(feature_space, nodes)
+    na_spn = server.build_spn(feature_space, nodes)
 
-    # get accuracy    
-    test_data = get_data(args.dataset, 'test')
+    # get accuracy
+    test_data = get_test_data(args.dataset)
     # set last label column to nan for MPE
     labels = np.copy(test_data[:, -1])
-    test_data[:, -1] = np.nan
-    pred = most_probable_value(na_spn, test_data)
-    acc = accuracy_score(labels.flatten(), pred[:,-1].flatten())
+    pred = server.classify(na_spn, test_data)
+    acc = accuracy_score(labels.flatten(), pred)
     rtpt.step()
 
     print(acc)
+
+def main_rat_structure(args):
+    """
+        use RAT SPN client 
+    """
+
+
+def main(args):
+
+    if args.structure == 'learned':
+        main_learned_structure(args)
+    elif args.structure == 'rat':
+        main_rat_structure(args)
+    else:
+        raise ValueError("structure must be either 'rat' or 'learned'")
 
 
 parser = argparse.ArgumentParser()
@@ -157,6 +249,8 @@ parser.add_argument('--setting', default='horizontal')
 parser.add_argument('--num-clients', type=int, default=5)
 parser.add_argument('--dataset', default='income')
 parser.add_argument('--task', default='classification')
+parser.add_argument('--sample-partitioning', default='iid')
+parser.add_argument('--structure', default='learned')
 
 args = parser.parse_args()
 

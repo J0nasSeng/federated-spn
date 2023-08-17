@@ -73,46 +73,45 @@ class Partition:
     def __init__(self, scope) -> None:
         self.scope = scope
 
-def build_rand_region_graph(r, variables):
+def region_graph_to_spn(G):
     """
-        Build a region graph s.t. each region has one child (partition) and
-        each partition has two childs (regions).
-
-        TODO: Isn't a binary tree too simple? shouldn't there be interactions?
-
-        :param r: number of region layers
-        :param d: number of partition childs being created for each region
+    Convert a region graph into an SPN
     """
-    G = nx.DiGraph()
-    root = Region(variables)
-    G.add_node(root)
-    curr_children = [root]
-    for depth in range(1, r):
-        new_children = []
-        for c in curr_children:
-            if len(c.scope) > 1:
-                if len(c.scope) == 2:
-                    s1, s2 = [c.scope[0]], [c.scope[1]]
-                else:
-                    split_idx = np.random.randint(1, len(c.scope) - 1)
-                    s1, s2 = c.scope[:split_idx], c.scope[split_idx:]
-                p = Partition(c.scope)
-                r1 = Region(s1)
-                r2 = Region(s2)
-                G.add_edge(c, p)
-                G.add_edge(p, r1)
-                G.add_edge(p, r2)
-                new_children += [r1, r2]
-        curr_children = new_children
+    nodes = reversed(list(nx.topological_sort(G)))
     
-    # if there's still a node with a scope over multiple variables, split it
-    nodes_to_split = [n for n in G.nodes if len(n.scope) > 1]
-    for n in nodes_to_split:
-        for s in n.scope:
-            p = Partition([s])
-            G.add_edge(n, p)
 
-    return G
+def random_region_graph(depth, variables, curr_parents, G=nx.DiGraph()):
+    if depth == 0:
+        root = Region(variables)
+        G.add_node(root)
+        parents = [root]
+        return random_region_graph(depth+1, variables, parents, G)
+    else:
+        next_parents = []
+        for p in curr_parents:
+            if type(p) == Region:
+                # add a partition node
+                if len(p.scope) > 1:
+                    node = Partition(p.scope)
+                    G.add_edge(p, node)
+                    next_parents.append(node)
+            elif type(p) == Partition:
+                # split scope and add two regions
+                if len(p.scope) == 2:
+                    choice_left = [p.scope[0]]
+                    choice_right = [p.scope[1]]
+                else:
+                    choice_left = list(np.random.choice(p.scope, int(len(p.scope) / 2), False))
+                    choice_right = [v for v in p.scope if v not in choice_left]
+                node1, node2 = Region(choice_left), Region(choice_right)
+                G.add_edge(p, node1)
+                G.add_edge(p, node2)
+                next_parents += [node1, node2]
+        if len(next_parents) == 0:
+            return G
+        else:
+            return random_region_graph(depth+1, variables, next_parents, G)
+
 
 def split_feature_space(space, clients):
     """

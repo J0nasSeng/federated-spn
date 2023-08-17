@@ -12,4 +12,4 @@ ctxts = {
 
 ctxts['income'][14] = MetaType.BINARY
 ctxts['income'][15] = MetaType.BINARY
-ctxts['mnist'][(28*28)+1] = MetaType.DISCRETE
+ctxts['mnist'][(28*28)] = MetaType.DISCRETE
