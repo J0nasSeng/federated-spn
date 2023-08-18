@@ -10,7 +10,7 @@
 import ray
 import numpy as np
 from client import FlowNode
-from datasets.utils import get_train_data, get_test_data
+from datasets.utils import get_horizontal_train_data, get_test_data, get_vertical_train_data, get_hybrid_train_data
 from spn.structure.Base import Sum, Product
 from spn.algorithms.Inference import log_likelihood
 from spn.algorithms.MPE import mpe
@@ -36,7 +36,7 @@ rtpt.start()
 
 class SPFlowServer:
 
-    def train_horizontal(self, train_data, feature_spaces, args):
+    def train(self, train_data, feature_spaces, args):
         """
             This function starts a local ray cluster, splits data into equal sized
             subsets and trains one client/worker on each subset.
@@ -51,17 +51,17 @@ class SPFlowServer:
             logging.info(f'Train node {c}')
             node = FlowNode.remote(args.dataset)
             nodes.append(node)
-            train_subset = train_data[c]
-            assign_jobs.append(node.assign_subset.remote(train_subset))
-        ray.get(assign_jobs)
-
-        feature_space = list(feature_spaces.values())[0]
-        assign_jobs = []
-        for c in range(args.num_clients):
             if args.setting == 'horizontal':
-                subspace = feature_space
-            node = nodes[c]
-            assign_jobs.append(node.assign_subspace.remote(subspace))
+                train_subset = train_data[c]
+                subspace = list(feature_spaces.values())[0]
+            elif args.setting == 'vertical':
+                subspace = feature_spaces[c]
+                conc_train_data = np.concatenate(train_data)
+                train_subset = conc_train_data[:, subspace]
+            elif args.setting == 'hybrid':
+                subspace = feature_spaces[c]
+                train_subset = train_data[c]
+            assign_jobs.append(node.assign_subset.remote((subspace, train_subset)))
         ray.get(assign_jobs)
             
         rtpt.step()
@@ -201,22 +201,24 @@ class EinsumServer:
 
 
 def main_learned_structure(args):
-    # load data 
-    train_data = get_train_data(args.dataset, args.num_clients, args.sample_partitioning)
     server = SPFlowServer()
     
     # train and create network aligned SPN
     if args.setting == 'horizontal':
-        feature_space = {tuple(list(range(args.num_clients))): list(range(train_data[0].shape[1]))}
-        nodes = server.train_horizontal(train_data, feature_space, args)
+        train_data = get_horizontal_train_data(args.dataset, args.num_clients, args.sample_partitioning)
+        feature_spaces = [list(range(train_data[0].shape[1])) for _ in range(args.num_clients)]
+        nodes = server.train(train_data, feature_spaces, args)
     elif args.setting == 'hybrid':
-        # TODO: get feature sub spaces
-        pass
+        train_data, feature_spaces = get_vertical_train_data(args.dataset, args.num_clients)
+        nodes = server.train(train_data, feature_spaces)
     elif args.setting == 'vertical':
-        # TODO: implement
-        pass
+        sample_frac = None if args.sample_frac == -1 else args.sample_frac
+        train_data, feature_spaces = get_hybrid_train_data(args.ds, args.num_clients, args.min_dim_frac, args.max_dim_frac, sample_frac)
+        nodes = server.train(train_data, feature_spaces)
 
-    na_spn = server.build_spn(feature_space, nodes)
+
+    grouped_feature_spaces = utils.group_clients_by_subspace(feature_spaces)
+    na_spn = server.build_spn(grouped_feature_spaces, nodes)
 
     # get accuracy
     test_data = get_test_data(args.dataset)
@@ -251,6 +253,10 @@ parser.add_argument('--dataset', default='income')
 parser.add_argument('--task', default='classification')
 parser.add_argument('--sample-partitioning', default='iid')
 parser.add_argument('--structure', default='learned')
+parser.add_argument('--min-dim-frac', default=0.25, type=float)
+parser.add_argument('--max-dim-frac', default=0.5, type=float)
+parser.add_argument('--sample-frac', default=-1., type=float)
+
 
 args = parser.parse_args()
 

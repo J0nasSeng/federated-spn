@@ -143,7 +143,12 @@ def reassign_node_ids(spn):
         n.id = id
     return spn
         
-
-#g = build_rand_region_graph(5, list(range(10)))
-#print(g)
-#nx.draw(g, with_labels=True)
+def group_clients_by_subspace(subspaces):
+    client_dict = {}
+    for i, space in enumerate(subspaces):
+        idx = [i]
+        for j, s in enumerate(subspaces):
+            if space == s:
+                idx.append(j)
+        client_dict[tuple(idx)] = space
+    return client_dict
