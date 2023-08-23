@@ -8,7 +8,8 @@ import torch
 from fast_pytorch_kmeans import KMeans
 from torch import nn
 
-from simple_einet.distributions import AbstractLeaf, RatNormal, truncated_normal_
+from distributions.abstract_leaf import AbstractLeaf, RatNormal, truncated_normal_
+from distributions.normal import RatNormal
 from simple_einet.einsum_layer import EinsumLayer, EinsumMixingLayer, LinsumLayer, LinsumLayerLogWeights
 from simple_einet.factorized_leaf_layer import FactorizedLeaf
 from simple_einet.layers import Sum

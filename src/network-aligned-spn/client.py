@@ -3,7 +3,7 @@
     It is implemented as a ray actor.
 """
 import ray
-from einet.einet import Einet, EinetConfig
+#from einet.einet import Einet, EinetConfig
 from torch.utils.data import DataLoader
 from rtpt import RTPT
 import torch
@@ -11,6 +11,7 @@ from spn.algorithms.LearningWrappers import learn_mspn
 from spn.structure.Base import Context
 from spn.algorithms.EM import EM_optimization
 import context
+import utils
 
 n_gpus = 1 if torch.cuda.is_available() else 0
 @ray.remote(num_gpus=n_gpus)
@@ -93,6 +94,7 @@ class FlowNode:
             ctxt.add_domains(train_data)
             spn = learn_mspn(train_data, ctxt)
             EM_optimization(spn, train_data, iterations=3)
+            spn = utils.adjust_scope(spn, subspace)
             self.spns[tuple(subspace)] = spn
 
     def get_feature_ids(self):
@@ -101,7 +103,8 @@ class FlowNode:
         """
 
     def get_dataset_len(self):
-        return len(self.train_data)
+        len_data = sum(len(data) for _, data in self.subspaces)
+        return len_data
     
     def get_spn(self, subspace):
         return self.spns[subspace]

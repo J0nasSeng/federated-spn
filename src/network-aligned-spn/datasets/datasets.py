@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd 
 import torch
 import os
+from datetime import datetime
 
 class TabularDataset(Dataset):
 
@@ -20,10 +21,9 @@ class Avazu(TabularDataset):
     def __init__(self, train_path, split='train') -> None:
         super().__init__()
         self.split = split
-        parse_date = lambda val : pd.datetime.strptime(val, '%y%m%d%H')
         if split == 'train' or split == 'valid':
-            self.train_data = pd.read_csv(train_path,
-                                        parse_dates=['hour'], date_parser=parse_date)
+            self.train_data = pd.read_csv(os.path.join(train_path, 'train.csv'),
+                                        parse_dates=['hour'], date_format='%y%m%d%H')
             
             self._preprocess_train()
         elif split == 'test':

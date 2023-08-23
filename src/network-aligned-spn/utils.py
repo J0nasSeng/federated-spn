@@ -146,9 +146,21 @@ def reassign_node_ids(spn):
 def group_clients_by_subspace(subspaces):
     client_dict = {}
     for i, space in enumerate(subspaces):
-        idx = [i]
+        idx = []
         for j, s in enumerate(subspaces):
             if space == s:
                 idx.append(j)
+        if len(idx) == 0:
+            # no match was found
+            idx = [i]
         client_dict[tuple(idx)] = space
     return client_dict
+
+def adjust_scope(spn, space):
+    nodes = get_nodes_by_type(spn)
+    scope_mapping = {i: s for i, s in enumerate(space)}
+    for n in nodes:
+        sc = list(n.scope)
+        new_sc = [scope_mapping[i] for i in sc]
+        n.scope = new_sc
+    return spn

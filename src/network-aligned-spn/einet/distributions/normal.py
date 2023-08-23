@@ -1,12 +1,12 @@
 from typing import Tuple
 
 import torch
-from simple_einet.distributions.abstract_leaf import AbstractLeaf
-from simple_einet.type_checks import check_valid
+from einet.distributions.abstract_leaf import AbstractLeaf
+from einet.type_checks import check_valid
 from torch import distributions as dist
 from torch import nn
 
-from simple_einet.utils import SamplingContext
+from utils import SamplingContext
 
 
 class Normal(AbstractLeaf):

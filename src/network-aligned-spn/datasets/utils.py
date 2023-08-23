@@ -5,10 +5,11 @@ from torchvision.datasets import MNIST
 import torchvision
 from fedlab.utils.dataset import BasicPartitioner, MNISTPartitioner
 
-def get_horizontal_train_data(ds, num_clients, partitioning='iid'):
+def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2):
     if ds == 'income':
         dataset = Income('../../datasets/income/', split='train')
-        partitioner = IncomePartitioner(dataset.targets, num_clients, partition=partitioning)
+        partitioner = IncomePartitioner(dataset.targets, num_clients, 
+                                        partition=partitioning, dir_alpha=dir_alpha)
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))
@@ -19,14 +20,16 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid'):
                                  (0.1307,), (0.3081,)),
                              ])
         dataset = MNIST('../../datasets/', True, transform=transform, download=True)
-        partitioner = MNISTPartitioner(dataset.targets, num_clients, partition=partitioning)
+        partitioner = MNISTPartitioner(dataset.targets, num_clients, 
+                                       partition=partitioning, dir_alpha=dir_alpha)
         imgs = dataset.data.reshape((-1, 28*28)).numpy().astype(np.float64)
         imgs /= 255.
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets)).astype(np.float64)
     elif ds == 'avazu':
         dataset = Avazu('../../datasets/', split='train')
-        partitioner = AvazuPartitioner(dataset.targets, num_clients, partition=partitioning)
+        partitioner = AvazuPartitioner(dataset.targets, num_clients, 
+                                       partition=partitioning, dir_alpha=dir_alpha)
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))
@@ -44,6 +47,7 @@ def get_vertical_train_data(ds, num_clients):
         cols = np.arange(columns)
         cols = np.random.permutation(cols)
         split_cols = np.array_split(cols, num_clients)
+        split_cols = [list(s) for s in split_cols]
 
         dataset = Income('../../datasets/income/', split='train')
         np_features = dataset.features.numpy()
