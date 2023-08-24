@@ -19,7 +19,7 @@ n_gpus = 1 if torch.cuda.is_available() else 0
 @ray.remote(num_gpus=n_gpus)
 class EinetNode:
 
-    def __init__(self, dataset, num_epochs=5, num_classes=2) -> None:
+    def __init__(self, dataset, num_epochs=10, num_classes=2) -> None:
         self.dataset = dataset
         self.num_epochs = num_epochs
         self.device = torch.device(f'cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -32,14 +32,14 @@ class EinetNode:
     def train(self):
         """
             Train SPN on local data
-        """
-        """
-        Training loop to train the SPN. Follows EM-procedure.
+            Training loop to train the SPN. Follows EM-procedure.
         """
         for subspace, train_loader in self.subspaces:
-            einet_cfg = EinetConfig(len(subspace) - 1, num_classes=self.num_classes, leaf_type=RatNormal, leaf_kwargs={})
+            einet_cfg = EinetConfig(len(subspace) - 1, num_classes=self.num_classes, 
+                                    leaf_type=RatNormal, leaf_kwargs={}, depth=5, num_leaves=20,
+                                    num_sums=20, num_repetitions=10)
             einet = Einet(einet_cfg)
-            optim = torch.optim.Adam(einet.parameters(), 0.1)
+            optim = torch.optim.SGD(einet.parameters(), 0.1)
             cross_entropy = torch.nn.CrossEntropyLoss()
             self.losses = []
             for epoch_count in range(self.num_epochs):

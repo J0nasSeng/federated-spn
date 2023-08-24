@@ -197,7 +197,7 @@ def make_data_loader(ds, batch_size=64):
             data_loaders.append(tdl)
         return data_loaders
     else:
-        x, y = d[...,:-1], d[...,-1]
+        x, y = ds[...,:-1], ds[...,-1]
         tds = TensorDataset(torch.from_numpy(x), torch.from_numpy(y))
         tdl = DataLoader(tds, batch_size=batch_size)
         return tdl

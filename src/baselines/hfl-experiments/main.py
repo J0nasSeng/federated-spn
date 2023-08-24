@@ -13,15 +13,18 @@ from datasets.utils import get_horizontal_train_data, get_test_dataset
 from utils import evaluate_binary
 import torch
 import argparse
+import os
+import pandas as pd
 
 class EvalPipeline(StandalonePipeline):
-    def __init__(self, handler, trainer, test_loader, criterion, evaluate):
+    def __init__(self, handler, trainer, test_loader, criterion, evaluate, args):
         super().__init__(handler, trainer)
         self.test_loader = test_loader 
         self.loss = []
         self.acc = []
         self.criterion = criterion
         self.evaluate = evaluate
+        self.args = args
         
     def main(self):
         t=0
@@ -44,7 +47,27 @@ class EvalPipeline(StandalonePipeline):
             self.loss.append(loss)
             self.acc.append(acc)
         
+        # log results
+        if os.path.isfile('./experiments.csv'):
+            df = pd.read_csv('./experiments.csv', index_col=0)
+            table_dict = df.to_dict()
+            table_dict = {k: list(v.values()) for k, v in table_dict.items()}
+        else:
+            table_dict = {'dataset': [], 'setting': [], 'rounds': [],
+                  'clients': [], 'accuracy': [], 'skew': [], 'dir_alpha': []}
+        table_dict['accuracy'].append(self.acc[-1])
+        table_dict['clients'].append(self.args.num_clients)
+        table_dict['dataset'].append(self.args.dataset)
+        table_dict['setting'].append('horizontal')
+        table_dict['skew'].append(self.args.partitioning)
+        table_dict['dir_alpha'].append(self.args.dir_alpha)
+        table_dict['rounds'].append(self.args.comm_rounds)
+        df = pd.DataFrame.from_dict(table_dict)
+        df.to_csv('./experiments.csv')
+
 def run_pipeline(args):
+    if args.partitioning == 'iid':
+        args.dir_alpha = 0
     dataset = get_horizontal_train_data(args.dataset, args.num_clients, args.partitioning)
     
     if args.dataset == 'mnist':
@@ -89,6 +112,7 @@ parser.add_argument('--gpu', default=None, type=int or None)
 parser.add_argument('--epochs', default=50, type=int)
 parser.add_argument('--batch-size', default=32, type=int)
 parser.add_argument('--partitioning', default='iid')
+parser.add_argument('--dir-alpha', default=0.2, type=float)
 parser.add_argument('--comm-rounds', default=10, type=int)
 parser.add_argument('--sample-ratio', default=1.0, type=float)
 parser.add_argument('--lr', default=0.01, type=float)
