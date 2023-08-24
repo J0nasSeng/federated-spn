@@ -8,10 +8,10 @@ from torch import distributions as dist
 from torch import nn
 from torch.nn import functional as F
 
-from simple_einet.utils import SamplingContext, invert_permutation
-from simple_einet.layers import AbstractLayer, Sum
-from simple_einet.type_checks import check_valid
-from simple_einet.distributions.abstract_leaf import AbstractLeaf, dist_mode
+from einet.utils import SamplingContext, invert_permutation
+from einet.layers import AbstractLayer, Sum
+from einet.type_checks import check_valid
+from einet.distributions.abstract_leaf import AbstractLeaf, dist_mode
 
 
 class Mixture(AbstractLeaf):

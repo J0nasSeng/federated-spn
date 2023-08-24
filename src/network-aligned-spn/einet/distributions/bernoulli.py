@@ -1,5 +1,5 @@
 import torch
-from simple_einet.distributions.abstract_leaf import AbstractLeaf
+from einet.distributions.abstract_leaf import AbstractLeaf
 from torch import distributions as dist
 from torch import nn
 

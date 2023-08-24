@@ -9,8 +9,8 @@
 
 import ray
 import numpy as np
-from client import FlowNode
-from datasets.utils import get_horizontal_train_data, get_test_data, get_vertical_train_data, get_hybrid_train_data
+from client import FlowNode, EinetNode
+from datasets.utils import get_horizontal_train_data, get_test_data, get_vertical_train_data, get_hybrid_train_data, make_data_loader
 from spn.structure.Base import Sum, Product
 from spn.algorithms.Inference import log_likelihood
 from spn.algorithms.MPE import mpe
@@ -22,8 +22,9 @@ import argparse
 from sklearn.metrics import accuracy_score, f1_score
 import utils
 from spn_leaf import SPNLeaf
-#from einet.layers import Sum as SumLayer
+from einet.layers import Sum as SumLayer
 import torch
+import torch.nn as nn
 import pandas as pd
 import os
 
@@ -120,7 +121,7 @@ class SPFlowServer:
 
 class EinsumServer:
 
-    def train_horizontal(train_data, feature_spaces, args):
+    def train(self, train_data, feature_spaces, args):
         """
             Train FedSPN in horizontal scenario with Einsum networks as SPN implementation on client side.
         """
@@ -128,20 +129,20 @@ class EinsumServer:
         train_jobs = []
         assign_jobs = []
         nodes = []
-
         for c in range(args.num_clients):
             logging.info(f'Train node {c}')
-            node = FlowNode.remote(args.dataset)
+            node = EinetNode.remote(args.dataset, num_classes=10)
             nodes.append(node)
-            train_subset = train_data[c]
-            assign_jobs.append(node.assign_subset.remote(train_subset))
-        ray.get(assign_jobs)
-
-        feature_space = list(feature_spaces.values())[0]
-        assign_jobs = []
-        for c in range(args.num_clients):
-            node = nodes[c]
-            assign_jobs.append(node.assign_subspace.remote(feature_space))
+            if args.setting == 'horizontal':
+                train_subset = train_data[c]
+                subspace = feature_spaces[c]
+            elif args.setting == 'vertical':
+                subspace = feature_spaces[c]
+                train_subset = train_data[c]
+            elif args.setting == 'hybrid':
+                subspace = feature_spaces[c]
+                train_subset = train_data[c]
+            assign_jobs.append(node.assign_subset.remote((subspace, train_subset)))
         ray.get(assign_jobs)
             
         rtpt.step()
@@ -191,7 +192,7 @@ class EinsumServer:
         weights = [d / norm for d in ds_len]
         num_classes = client_spns[0].config.num_classes
         spn = SumLayer(num_classes*len(nodes), 1, num_classes)
-        spn.weights = torch.tensor(weights)
+        spn.weights = nn.Parameter(torch.tensor(weights))
         return spn, client_spns
 
     def classify(self, client_spns, spn, test_data):
@@ -245,7 +246,45 @@ def main_rat_structure(args):
     """
         use RAT SPN client 
     """
+    server = EinsumServer()
 
+    if args.sample_partitioning == 'iid':
+        args.dir_alpha = 0.
+    # train and create network aligned SPN
+    if args.setting == 'horizontal':
+        train_data = get_horizontal_train_data(args.dataset, args.num_clients, 
+                                               args.sample_partitioning, args.dir_alpha)
+        feature_spaces = [list(range(train_data[0].shape[1])) for _ in range(args.num_clients)]
+        train_data = make_data_loader(train_data, args.batch_size)
+        nodes = server.train(train_data, feature_spaces, args)
+    elif args.setting == 'vertical':
+        train_data, feature_spaces = get_vertical_train_data(args.dataset, args.num_clients)
+        train_data = make_data_loader(train_data, args.batch_size)
+        nodes = server.train(train_data, feature_spaces, args)
+    elif args.setting == 'hybrid':
+        sample_frac = None if args.sample_frac == -1 else args.sample_frac
+        train_data, feature_spaces = get_hybrid_train_data(args.ds, args.num_clients, args.min_dim_frac, args.max_dim_frac, sample_frac)
+        train_data = make_data_loader(train_data, args.batch_size)
+        nodes = server.train(train_data, feature_spaces, args)
+
+    grouped_feature_spaces = utils.group_clients_by_subspace(feature_spaces)
+    na_spn = server.build_spn(grouped_feature_spaces, nodes)
+
+    # get accuracy
+    test_data = get_test_data(args.dataset)
+    test_data = make_data_loader(test_data, args.batch_size)
+    # set last label column to nan for MPE
+    labels = np.copy(test_data[:, -1])
+    pred = server.classify(na_spn, test_data)
+    acc = accuracy_score(labels.flatten(), pred)
+    f1_micro = f1_score(labels.flatten(), pred, average='micro')
+    f1_macro = f1_score(labels.flatten(), pred, average='macro')
+    rtpt.step()
+
+    # shut down ray cluster
+    ray.shutdown()
+
+    return acc, f1_micro, f1_macro
 
 def main(args):
 
@@ -253,28 +292,28 @@ def main(args):
                   'clients': [], 'accuracy': [], 'f1_micro': [], 'f1_macro': [], 
                   'skew': [], 'dir_alpha': []}
 
-    if args.structure == 'learned':
-        if os.path.isfile('./experiments.csv'):
-            df = pd.read_csv('./experiments.csv', index_col=0)
-            table_dict = df.to_dict()
-            table_dict = {k: list(v.values()) for k, v in table_dict.items()}
-        for e in range(args.num_experiments):
+    if os.path.isfile('./experiments.csv'):
+        df = pd.read_csv('./experiments.csv', index_col=0)
+        table_dict = df.to_dict()
+        table_dict = {k: list(v.values()) for k, v in table_dict.items()}
+    for e in range(args.num_experiments):
+        if args.structure == 'learned':
             acc, f1_micro, f1_macro = main_learned_structure(args)
-            table_dict['architecture'].append(args.structure)
-            table_dict['accuracy'].append(acc)
-            table_dict['clients'].append(args.num_clients)
-            table_dict['dataset'].append(args.dataset)
-            table_dict['f1_macro'].append(f1_macro)
-            table_dict['f1_micro'].append(f1_micro)
-            table_dict['setting'].append(args.setting)
-            table_dict['skew'].append(args.sample_partitioning)
-            table_dict['dir_alpha'].append(args.dir_alpha)
-        df = pd.DataFrame.from_dict(table_dict)
-        df.to_csv('./experiments.csv')
-    elif args.structure == 'rat':
-        main_rat_structure(args)
-    else:
-        raise ValueError("structure must be either 'rat' or 'learned'")
+        elif args.structure == 'rat':
+            acc, f1_micro, f1_macro = main_rat_structure(args)
+        else:
+            raise ValueError("Structure must be 'learned' or 'rat'")
+        table_dict['architecture'].append(args.structure)
+        table_dict['accuracy'].append(acc)
+        table_dict['clients'].append(args.num_clients)
+        table_dict['dataset'].append(args.dataset)
+        table_dict['f1_macro'].append(f1_macro)
+        table_dict['f1_micro'].append(f1_micro)
+        table_dict['setting'].append(args.setting)
+        table_dict['skew'].append(args.sample_partitioning)
+        table_dict['dir_alpha'].append(args.dir_alpha)
+    df = pd.DataFrame.from_dict(table_dict)
+    df.to_csv('./experiments.csv')
 
 
 parser = argparse.ArgumentParser()
@@ -289,6 +328,7 @@ parser.add_argument('--max-dim-frac', default=0.5, type=float)
 parser.add_argument('--sample-frac', default=-1., type=float)
 parser.add_argument('--num-experiments', default=1, type=int)
 parser.add_argument('--dir-alpha', default=0.2, type=float)
+parser.add_argument('--batch-size', default=64, type=int)
 
 
 args = parser.parse_args()

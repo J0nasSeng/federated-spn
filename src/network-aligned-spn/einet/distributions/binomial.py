@@ -1,13 +1,13 @@
 from torch import distributions as dist, nn
 import numpy as np
 import torchvision.models as models
-from simple_einet.utils import SamplingContext
+from einet.utils import SamplingContext
 from typing import List, Tuple, Union
 import torch
 from torch import nn
-from simple_einet.type_checks import check_valid
+from einet.type_checks import check_valid
 
-from simple_einet.distributions.abstract_leaf import (
+from einet.distributions.abstract_leaf import (
     AbstractLeaf,
     dist_forward,
     dist_mode,

@@ -6,7 +6,7 @@ from einet.type_checks import check_valid
 from torch import distributions as dist
 from torch import nn
 
-from utils import SamplingContext
+from einet.utils import SamplingContext
 
 
 class Normal(AbstractLeaf):

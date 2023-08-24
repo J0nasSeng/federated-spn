@@ -12,12 +12,14 @@ from spn.structure.Base import Context
 from spn.algorithms.EM import EM_optimization
 import context
 import utils
+from einet.einet import Einet, EinetConfig
+from einet.distributions.normal import RatNormal
 
 n_gpus = 1 if torch.cuda.is_available() else 0
 @ray.remote(num_gpus=n_gpus)
 class EinetNode:
 
-    def __init__(self, dataset, num_epochs=10) -> None:
+    def __init__(self, dataset, num_epochs=5, num_classes=2) -> None:
         self.dataset = dataset
         self.num_epochs = num_epochs
         self.device = torch.device(f'cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -25,6 +27,7 @@ class EinetNode:
         self.subspaces = []
         self._rtpt = RTPT('JS', 'FedSPN', num_epochs)
         self._rtpt.start()
+        self.num_classes = num_classes
 
     def train(self):
         """
@@ -33,33 +36,32 @@ class EinetNode:
         """
         Training loop to train the SPN. Follows EM-procedure.
         """
-        for subspace in self.subspaces:
-            einet_cfg = EinetConfig(len(subspace))
+        for subspace, train_loader in self.subspaces:
+            einet_cfg = EinetConfig(len(subspace) - 1, num_classes=self.num_classes, leaf_type=RatNormal, leaf_kwargs={})
             einet = Einet(einet_cfg)
-            optim = torch.optim.Adam(self.einet.parameters(), 1.0)
+            optim = torch.optim.Adam(einet.parameters(), 0.1)
             cross_entropy = torch.nn.CrossEntropyLoss()
             self.losses = []
             for epoch_count in range(self.num_epochs):
                 optim.zero_grad()
                 self._rtpt.step()
                 total_ll = 0.0
-                for i, (x, y) in enumerate(self.train_loader):
-                    x = x.to(self.device)
+                for i, (x, y) in enumerate(train_loader):
+                    x = x.to(device=self.device, dtype=torch.float32)
+                    y = y.to(device=self.device, dtype=torch.long)
+                    x = x.unsqueeze(1)
                     outputs = einet(x)
                     loss = cross_entropy(outputs, y)
                     
                     loss.backward()
                     optim.step()
                     total_ll += loss.item()
-                self.losses.append(total_ll)
-            self.einets[subspace] = einet
+                self.losses.append(total_ll / len(train_loader))
+                print(f"Epoch {epoch_count+1}/{self.num_epochs}: \t {total_ll / len(train_loader)}")
+            self.einets[tuple(subspace)] = einet
 
-    def assign_subset(self, train_data):
-        """
-            assign subset to this client
-        """
-        self.train_data = train_data
-        self.train_loader = DataLoader(self.train_data, 32)
+    def assign_subset(self, subspace_with_data):
+        self.subspaces.append(subspace_with_data)
 
     def get_feature_ids(self):
         """
@@ -67,10 +69,10 @@ class EinetNode:
         """
 
     def get_dataset_len(self):
-        return len(self.train_data)
-    
-    def assign_subspace(self, subspace):
-        self.subspaces.append(subspace)
+        data_len = 0
+        for _, loader in self.subspaces:
+            data_len += len(loader) * loader.batch_size
+        return data_len
 
     def get_spn(self, subspace):
         return self.einets[subspace]

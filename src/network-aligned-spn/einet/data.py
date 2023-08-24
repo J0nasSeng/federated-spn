@@ -17,8 +17,8 @@ from torch.utils.data.sampler import Sampler
 from torchvision.datasets import CIFAR10, MNIST, SVHN, CelebA, FashionMNIST, LSUN
 from torchvision.transforms.functional import InterpolationMode
 
-from simple_einet.distributions import RatNormal
-from simple_einet.distributions.binomial import Binomial
+from einet.distributions import RatNormal
+from einet.distributions.binomial import Binomial
 
 
 @dataclass
@@ -294,7 +294,7 @@ def _make_loader(cfg, dataset: Dataset, loop: bool, shuffle: bool) -> DataLoader
     else:
         sampler = None
 
-    from exp_utils import worker_init_reset_seed
+    from einet.exp_utils import worker_init_reset_seed
 
     return DataLoader(
         dataset,

@@ -1,8 +1,8 @@
 from typing import Any, Dict, Iterable, List, Tuple
 
 import torch
-from simple_einet.distributions.abstract_leaf import AbstractLeaf
-from simple_einet.utils import SamplingContext, invert_permutation
+from einet.distributions.abstract_leaf import AbstractLeaf
+from einet.utils import SamplingContext, invert_permutation
 from torch import distributions as dist
 from torch import nn
 

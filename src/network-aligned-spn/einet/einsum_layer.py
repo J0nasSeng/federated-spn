@@ -5,9 +5,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from simple_einet.layers import AbstractLayer
-from simple_einet.type_checks import check_valid
-from simple_einet.utils import SamplingContext, index_one_hot, diff_sample_one_hot
+from einet.layers import AbstractLayer
+from einet.type_checks import check_valid
+from einet.utils import SamplingContext, index_one_hot, diff_sample_one_hot
 
 
 class LinsumLayer(AbstractLayer):

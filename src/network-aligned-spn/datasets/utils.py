@@ -3,6 +3,8 @@ import numpy as np
 from datasets.datasets import Avazu, Income
 from torchvision.datasets import MNIST
 import torchvision
+from torch.utils.data import TensorDataset, DataLoader
+import torch
 from fedlab.utils.dataset import BasicPartitioner, MNISTPartitioner
 
 def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2):
@@ -184,6 +186,21 @@ def get_test_data(ds):
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))
         return data
+    
+def make_data_loader(ds, batch_size=64):
+    if type(ds) is list:
+        data_loaders = []
+        for d in ds:
+            x, y = d[...,:-1], d[...,-1]
+            tds = TensorDataset(torch.from_numpy(x), torch.from_numpy(y))
+            tdl = DataLoader(tds, batch_size=batch_size)
+            data_loaders.append(tdl)
+        return data_loaders
+    else:
+        x, y = d[...,:-1], d[...,-1]
+        tds = TensorDataset(torch.from_numpy(x), torch.from_numpy(y))
+        tdl = DataLoader(tds, batch_size=batch_size)
+        return tdl
         
 class IncomePartitioner(BasicPartitioner):
 

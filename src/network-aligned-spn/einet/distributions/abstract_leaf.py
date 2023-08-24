@@ -1,10 +1,10 @@
-from simple_einet.type_checks import check_valid
+from einet.type_checks import check_valid
 
 
 import logging
 from abc import ABC, abstractmethod
-from simple_einet.layers import AbstractLayer
-from simple_einet.utils import SamplingContext, index_one_hot
+from einet.layers import AbstractLayer
+from einet.utils import SamplingContext, index_one_hot
 from typing import List
 from torch import distributions as dist, nn
 import torch
@@ -55,8 +55,8 @@ def dist_mode(distribution: dist.Distribution, context: SamplingContext = None) 
     if isinstance(distribution, dist.Normal):
         # Repeat the mode along the batch axis
         return distribution.mean.repeat(context.num_samples, 1, 1, 1, 1)
-    from simple_einet.distributions.normal import CustomNormal
-    from simple_einet.distributions.binomial import CustomBinomial
+    from einet.distributions.normal import CustomNormal
+    from einet.distributions.binomial import CustomBinomial
 
     if isinstance(distribution, CustomNormal):
         # Repeat the mode along the batch axis
@@ -94,7 +94,7 @@ def dist_sample(distribution: dist.Distribution, context: SamplingContext = None
         samples = dist_mode(distribution, context)
         samples = samples.unsqueeze(1)
     else:
-        from simple_einet.distributions import CustomNormal
+        from einet.distributions import CustomNormal
 
         if type(distribution) == dist.Normal:
             distribution = dist.Normal(loc=distribution.loc, scale=distribution.scale * context.temperature_leaves)
