@@ -7,9 +7,13 @@ ctxts = {
     },
     'mnist': {
         i: MetaType.REAL for i in range(28*28)
+    },
+    'avazu': {
+        i: MetaType.REAL for i in range(1, 26)
     }
 }
 
 ctxts['income'][14] = MetaType.BINARY
 ctxts['income'][15] = MetaType.BINARY
 ctxts['mnist'][(28*28)] = MetaType.DISCRETE
+ctxts['avazu'][0] = MetaType.BINARY

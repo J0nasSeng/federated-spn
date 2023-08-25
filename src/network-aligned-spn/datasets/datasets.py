@@ -51,7 +51,6 @@ class Avazu(TabularDataset):
         self.train_data.rename(columns={'click': 'y',
                    'hour_time': 'hour'},
           inplace=True, errors='raise')
-        
         X = self.train_data.drop(['y'], axis=1)
         y = self.train_data['y']
         target_encoder = TargetEncoder()
@@ -63,10 +62,10 @@ class Avazu(TabularDataset):
 
         if self.split == 'train':
             self.features = torch.from_numpy(X_train)
-            self.targets = torch.from_numpy(y_train)
+            self.targets = torch.from_numpy(y_train.to_numpy())
         elif self.split == 'valid':
             self.features = torch.from_numpy(X_test)
-            self.targets = torch.from_numpy(y_test)
+            self.targets = torch.from_numpy(y_test.to_numpy())
 
         
 class Income(TabularDataset):
