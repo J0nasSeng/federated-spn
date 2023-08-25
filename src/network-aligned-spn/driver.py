@@ -12,7 +12,6 @@ import numpy as np
 from client import FlowNode, EinetNode
 from datasets.utils import get_horizontal_train_data, get_test_data, get_vertical_train_data, get_hybrid_train_data, make_data_loader
 from spn.structure.Base import Sum, Product
-from spn.algorithms.Inference import log_likelihood
 from spn.algorithms.MPE import mpe
 from rtpt import RTPT
 import logging
@@ -187,22 +186,40 @@ class EinsumServer:
     def build_spn_horizontal(self, nodes):
         client_spns = [ray.get(node.get_spns.remote()) for node in nodes]
         client_spns = [list(d.values())[0] for d in client_spns]
+        num_classes = client_spns[0].config.num_classes
         ds_len = [ray.get(node.get_dataset_len.remote()) for node in nodes]
         norm = sum(ds_len)
-        weights = [d / norm for d in ds_len]
-        num_classes = client_spns[0].config.num_classes
+        weights = []
+        for l in ds_len:
+            w = [l / norm] * num_classes
+            weights += w
+        weights = torch.tensor([weights] * num_classes).T
+        weights = weights.unsqueeze(0)
+        weights = weights.unsqueeze(3)
         spn = SumLayer(num_classes*len(nodes), 1, num_classes)
-        spn.weights = nn.Parameter(torch.tensor(weights))
+        spn.weights = nn.Parameter(weights)
         return spn, client_spns
 
     def classify(self, client_spns, spn, test_data):
         """
             Classify test_data instances
         """
-        client_outs = torch.concat([s(test_data) for s in client_spns], dim=1)
-        final_out = spn(client_outs)
-        return torch.argmax(final_out, dim=1)
+        accs, f1_micros, f1_macros = [], [], []
+        for x, y in test_data:
+            client_outs = torch.concat([s(x) for s in client_spns], dim=1)
+            client_outs = client_outs.unsqueeze(1)
+            client_outs = client_outs.unsqueeze(3)
+            final_out = spn(client_outs).squeeze()
+            pred = torch.argmax(final_out, dim=1)
+            pred = pred.detach().numpy().flatten()
+            acc = accuracy_score(y.numpy().flatten(), pred)
+            f1_micro = f1_score(y.numpy().flatten(), pred, average='micro')
+            f1_macro = f1_score(y.numpy().flatten(), pred, average='macro')
+            accs.append(acc)
+            f1_micros.append(f1_micro)
+            f1_macros.append(f1_macro)
 
+        return np.mean(accs), np.mean(f1_micros), np.mean(f1_macros)
 
 def main_learned_structure(args):
     server = SPFlowServer()
@@ -222,7 +239,6 @@ def main_learned_structure(args):
         sample_frac = None if args.sample_frac == -1 else args.sample_frac
         train_data, feature_spaces = get_hybrid_train_data(args.ds, args.num_clients, args.min_dim_frac, args.max_dim_frac, sample_frac)
         nodes = server.train(train_data, feature_spaces, args)
-
 
     grouped_feature_spaces = utils.group_clients_by_subspace(feature_spaces)
     na_spn = server.build_spn(grouped_feature_spaces, nodes)
@@ -268,17 +284,13 @@ def main_rat_structure(args):
         nodes = server.train(train_data, feature_spaces, args)
 
     grouped_feature_spaces = utils.group_clients_by_subspace(feature_spaces)
-    na_spn = server.build_spn(grouped_feature_spaces, nodes)
+    na_spn, client_spns = server.build_spn(grouped_feature_spaces, nodes)
 
     # get accuracy
     test_data = get_test_data(args.dataset)
     test_data = make_data_loader(test_data, args.batch_size)
-    # set last label column to nan for MPE
-    labels = np.copy(test_data[:, -1])
-    pred = server.classify(na_spn, test_data)
-    acc = accuracy_score(labels.flatten(), pred)
-    f1_micro = f1_score(labels.flatten(), pred, average='micro')
-    f1_macro = f1_score(labels.flatten(), pred, average='macro')
+    acc, f1_micro, f1_macro = server.classify(client_spns, na_spn, test_data)
+
     rtpt.step()
 
     # shut down ray cluster
@@ -315,7 +327,6 @@ def main(args):
     df = pd.DataFrame.from_dict(table_dict)
     df.to_csv('./experiments.csv')
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--setting', default='horizontal')
 parser.add_argument('--num-clients', type=int, default=5)
@@ -329,7 +340,6 @@ parser.add_argument('--sample-frac', default=-1., type=float)
 parser.add_argument('--num-experiments', default=1, type=int)
 parser.add_argument('--dir-alpha', default=0.2, type=float)
 parser.add_argument('--batch-size', default=64, type=int)
-
 
 args = parser.parse_args()
 
