@@ -95,26 +95,33 @@ def get_vertical_train_data(ds, num_clients):
 def split_dataset_hybrid(data, num_clients, num_cols, min_dim_frac, max_dim_frac, sample_frac, seed):
     sample_frac = 1/num_clients if sample_frac is None else sample_frac
     np.random.seed(seed)
-    min_dims, max_dims = np.ceil(min_dim_frac*num_cols), np.ceil(max_dim_frac*num_cols)
-    cols = np.arange(num_cols)
-    client_cols = []
-    for c in range(num_clients):
-        subspace = np.random.choice(cols, np.random.randint(min_dims, max_dims))
-        client_cols.append(set(subspace))
-    union = set().union(*client_cols)
-    if not len(union) == num_cols:
-        missing = [c for c in cols if c not in union]
-        for m in missing:
-            client = np.random.randint(0, num_clients)
-            client_cols[client] = list(client_cols[client] + [m])
+    cols_per_client = int(num_cols / num_clients)
+    client_to_col = []
+    for client_id in range(num_clients):
+        client_to_col += [client_id] * cols_per_client
+    
+    if len(client_to_col) < num_cols:
+        num_missing = num_cols - len(client_to_col)
+        # randomly sample clients to add
+        client_ids = np.random.choice(list(range(num_clients)), num_missing)
+        client_to_col += list(client_ids)
+    
+    rand_assignment = np.random.permutation(client_to_col)
+    client_col_assignment = {}
+    for cid in range(num_clients):
+        col_idx = np.argwhere(rand_assignment == cid).flatten()
+        client_col_assignment[cid] = col_idx
+    client_cols = [list(c) for c in client_col_assignment.values()]
     client_data = []
     idx = np.arange(data.shape[0])
     idx = np.random.permutation(idx)
     client_idx = np.array_split(idx, num_clients)
     for c in range(num_clients):
-        subspace = client_cols[c]
+        subspace = np.array(client_cols[c])
         cidx = client_idx[c]
-        client_data.append(data[cidx, subspace])
+        subspace_data = data[:, subspace]
+        c_data = subspace_data[cidx]
+        client_data.append(c_data)
     return client_data, client_cols
     
 def get_hybrid_train_data(ds, num_clients, min_dim_frac=0.25, max_dim_frac=0.5,

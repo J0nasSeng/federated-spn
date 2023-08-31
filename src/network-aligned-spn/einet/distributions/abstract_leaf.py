@@ -94,7 +94,7 @@ def dist_sample(distribution: dist.Distribution, context: SamplingContext = None
         samples = dist_mode(distribution, context)
         samples = samples.unsqueeze(1)
     else:
-        from einet.distributions import CustomNormal
+        from einet.distributions.normal import CustomNormal
 
         if type(distribution) == dist.Normal:
             distribution = dist.Normal(loc=distribution.loc, scale=distribution.scale * context.temperature_leaves)

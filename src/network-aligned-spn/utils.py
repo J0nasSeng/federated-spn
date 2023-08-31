@@ -8,6 +8,8 @@ from torch.utils.data import DataLoader
 import networkx as nx
 import itertools
 from spn.structure.Base import get_nodes_by_type
+from spn.structure.Base import Sum, Product
+from itertools import product
 
 def mkdir_p(path):
     """Linux mkdir -p"""
@@ -73,11 +75,56 @@ class Partition:
     def __init__(self, scope) -> None:
         self.scope = scope
 
-def region_graph_to_spn(G):
-    """
-    Convert a region graph into an SPN
-    """
-    nodes = reversed(list(nx.topological_sort(G)))
+def region_graph_to_spn(G: nx.DiGraph, curr_layer, scope_dist_mapping, spn_root=None, num_sums=5):
+    next_layer = []
+    spn = spn_root
+    if len(curr_layer) == 0:
+        return spn
+    for i, node in enumerate(curr_layer):
+        if len(list(G.pred[node])) == 0:
+            # then we have root node
+            spn = Sum()
+            spn.weights = np.repeat(1/num_sums**2, num_sums**2)
+            spn.scope = node.scope
+            node.spn_nodes = [spn]
+            next_layer = list(G.succ[node])
+        else:
+            if type(node) == Partition:
+                prods = [Product() for _ in range(num_sums**2)]
+                for p in prods:
+                    p.scope = node.scope
+                pred = list(G.pred[node])[0]
+                for s in pred.spn_nodes:
+                    s.children = prods
+                next_layer += list(G.succ[node])
+                node.spn_nodes = prods
+            elif type(node) == Region:
+                succ = list(G.succ[node])
+                if len(succ) == 0:
+                    # leaf node
+                    scope = node.scope[0]
+                    Distribution, params = scope_dist_mapping[scope]
+                    sums = [Distribution(**params) for _ in range(num_sums)]
+                else:
+                    sums = [Sum() for _ in range(num_sums)]
+                for s in sums:
+                    s.scope = node.scope
+                    if type(s) == Sum:
+                        s.weights = np.repeat(1/num_sums**2, num_sums**2)
+                pred = list(G.pred[node])[0]
+                # TODO: use pytorch implementation of SPN
+                for k, j in product(list(range(num_sums)), list(range(num_sums))):
+                    s = sums[k]
+                    if i % 2 == 0:
+                        # left side
+                        idx = (k*num_sums)+j
+                    else:
+                        # right side
+                        idx = (j*num_sums)+k
+                    pred.spn_nodes[idx].children.append(s)
+                node.spn_nodes = sums
+                next_layer += succ
+    return region_graph_to_spn(G, next_layer, scope_dist_mapping, spn, num_sums)
     
 
 def random_region_graph(depth, variables, curr_parents, G=nx.DiGraph()):

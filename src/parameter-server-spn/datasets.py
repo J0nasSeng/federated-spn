@@ -325,7 +325,7 @@ class CelebaLoader(Loader):
         super().__init__(n_clients, indspath, skew)
         transform = torchvision.transforms.Compose([torchvision.transforms.Resize((128, 128)), torchvision.transforms.ToTensor(), torchvision.transforms.Normalize(mean=(0,)*3, std=(1/255,)*3)])
         self.train_data = torchvision.datasets.CelebA('../../../../datasets/celeba/', split='train', transform=transform)
-        self.val_data = torchvision.datasets.CelebA('../../../../datasets/svhn/', split='valid', transform=transform)
+        self.val_data = torchvision.datasets.CelebA('../../../../datasets/celeba/', split='valid', transform=transform)
 
 
 def get_dataset_loader(dataset, num_clients, indspath, skew=0):
