@@ -95,7 +95,7 @@ class FlowNode:
             ctxt = Context(meta_types=[context.ctxts[self.dataset][i] for i in subspace])
             ctxt.add_domains(train_data)
             spn = learn_mspn(train_data, ctxt)
-            EM_optimization(spn, train_data, iterations=3)
+            EM_optimization(spn, train_data, iterations=5)
             spn = utils.adjust_scope(spn, subspace)
             self.spns[tuple(subspace)] = spn
 

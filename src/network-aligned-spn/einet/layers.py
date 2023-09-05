@@ -32,7 +32,6 @@ class AbstractLayer(nn.Module, ABC):
         """
         pass
 
-
 class Sum(AbstractLayer):
     def __init__(
         self,

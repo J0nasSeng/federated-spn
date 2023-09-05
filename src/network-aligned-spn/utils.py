@@ -10,6 +10,7 @@ import itertools
 from spn.structure.Base import get_nodes_by_type
 from spn.structure.Base import Sum, Product
 from itertools import product
+from scipy.special import softmax
 
 def mkdir_p(path):
     """Linux mkdir -p"""
@@ -84,7 +85,8 @@ def region_graph_to_spn(G: nx.DiGraph, curr_layer, scope_dist_mapping, spn_root=
         if len(list(G.pred[node])) == 0:
             # then we have root node
             spn = Sum()
-            spn.weights = np.repeat(1/num_sums**2, num_sums**2)
+            spn.weights = np.random.normal(0, 0.1, num_sums**2)
+            spn.weights = softmax(spn.weights)
             spn.scope = node.scope
             node.spn_nodes = [spn]
             next_layer = list(G.succ[node])
@@ -110,7 +112,8 @@ def region_graph_to_spn(G: nx.DiGraph, curr_layer, scope_dist_mapping, spn_root=
                 for s in sums:
                     s.scope = node.scope
                     if type(s) == Sum:
-                        s.weights = np.repeat(1/num_sums**2, num_sums**2)
+                        s.weights = np.random.normal(0, 0.1, num_sums**2)
+                        s.weights = softmax(s.weights)
                 pred = list(G.pred[node])[0]
                 # TODO: use pytorch implementation of SPN
                 for k, j in product(list(range(num_sums)), list(range(num_sums))):
@@ -127,7 +130,9 @@ def region_graph_to_spn(G: nx.DiGraph, curr_layer, scope_dist_mapping, spn_root=
     return region_graph_to_spn(G, next_layer, scope_dist_mapping, spn, num_sums)
     
 
-def random_region_graph(depth, variables, curr_parents, G=nx.DiGraph()):
+def random_region_graph(depth, variables, curr_parents, G=None):
+    if G is None:
+        G = nx.DiGraph()
     if depth == 0:
         root = Region(variables)
         G.add_node(root)

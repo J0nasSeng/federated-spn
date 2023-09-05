@@ -15,6 +15,9 @@ import torch
 import argparse
 import os
 import pandas as pd
+from models import AlexNet
+from vit_pytorch import SimpleViT
+import rtpt
 
 class EvalPipeline(StandalonePipeline):
     def __init__(self, handler, trainer, test_loader, criterion, evaluate, args):
@@ -25,6 +28,8 @@ class EvalPipeline(StandalonePipeline):
         self.criterion = criterion
         self.evaluate = evaluate
         self.args = args
+        self.rtpt = rtpt.RTPT('JS', 'ViT_Baseline', args.comm_rounds)
+        self.rtpt.start()
         
     def main(self):
         t=0
@@ -41,6 +46,7 @@ class EvalPipeline(StandalonePipeline):
             for pack in uploads:
                 self.handler.load(pack)
 
+            self.rtpt.step()
             loss, acc = self.evaluate(self.handler.model, self.criterion, self.test_loader)
             print("Round {}, Loss {:.4f}, Test Accuracy {:.4f}".format(t, loss, acc))
             t+=1
@@ -48,22 +54,21 @@ class EvalPipeline(StandalonePipeline):
             self.acc.append(acc)
         
         # log results
-        if os.path.isfile('./experiments.csv'):
-            df = pd.read_csv('./experiments.csv', index_col=0)
+        if os.path.isfile('./baseline_experiments.csv'):
+            df = pd.read_csv('./baseline_experiments.csv', index_col=0)
             table_dict = df.to_dict()
             table_dict = {k: list(v.values()) for k, v in table_dict.items()}
         else:
             table_dict = {'dataset': [], 'setting': [], 'rounds': [],
-                  'clients': [], 'accuracy': [], 'skew': [], 'dir_alpha': []}
+                  'clients': [], 'accuracy': [], 'skew': []}
         table_dict['accuracy'].append(self.acc[-1])
         table_dict['clients'].append(self.args.num_clients)
         table_dict['dataset'].append(self.args.dataset)
         table_dict['setting'].append('horizontal')
         table_dict['skew'].append(self.args.partitioning)
-        table_dict['dir_alpha'].append(self.args.dir_alpha)
         table_dict['rounds'].append(self.args.comm_rounds)
         df = pd.DataFrame.from_dict(table_dict)
-        df.to_csv('./experiments.csv')
+        df.to_csv('./baseline_experiments.csv')
 
 def run_pipeline(args):
     if args.partitioning == 'iid':
@@ -71,9 +76,33 @@ def run_pipeline(args):
     dataset = get_horizontal_train_data(args.dataset, args.num_clients, args.partitioning)
     
     if args.dataset == 'mnist':
-        model = CNN_MNIST()
+        if args.model == 'cnn':
+            model = AlexNet(channels=3)
+        elif args.model == 'vit':
+            model = SimpleViT(
+                image_size=28,
+                patch_size=8,
+                num_classes=10,
+                dim=512,
+                depth=4,
+                heads=16,
+                mlp_dim=1024,
+                channels=1
+            )
     elif args.dataset == 'cifar10':
-        model = CNN_CIFAR10()
+        if args.model == 'cnn':
+            model = AlexNet(channels=3)
+        elif args.model == 'vit':
+            model = SimpleViT(
+                image_size=32,
+                patch_size=8,
+                num_classes=10,
+                dim=512,
+                depth=4,
+                heads=16,
+                mlp_dim=1024,
+                channels=3
+            )
     else:
         model = nn.Sequential(
             MLP(dataset.in_dim, dataset.out_dim),
@@ -116,6 +145,7 @@ parser.add_argument('--dir-alpha', default=0.2, type=float)
 parser.add_argument('--comm-rounds', default=10, type=int)
 parser.add_argument('--sample-ratio', default=1.0, type=float)
 parser.add_argument('--lr', default=0.01, type=float)
+parser.add_argument('--model', default='vit')
 
 args = parser.parse_args()
 
