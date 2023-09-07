@@ -8,10 +8,19 @@ import torch
 from fedlab.utils.dataset import BasicPartitioner, MNISTPartitioner
 
 def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2):
-    if ds == 'income':
-        dataset = Income('../../datasets/income/', split='train')
-        partitioner = IncomePartitioner(dataset.targets, num_clients, 
+    if ds in ['income', 'breast-cancer', 'credit']:
+        if ds == 'income':
+            dataset = Income('../../datasets/income/', split='train')
+            partitioner = IncomePartitioner(dataset.targets, num_clients, 
                                         partition=partitioning, dir_alpha=dir_alpha)
+        elif ds == 'breast-cancer':
+            dataset = BreastCancer('../../datasets/breast-cancer/', split='train')
+            partitioner = BreasCancerPartitioner(dataset.targets, num_clients,
+                                                 partition=partitioning, dir_alpha=dir_alpha)
+        elif ds == 'credit':
+            dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='train')
+            partitioner = GimmeCreditPartitioner(dataset.targets, num_clients,
+                                                 partition=partitioning, dir_alpha=dir_alpha)
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))
@@ -228,3 +237,13 @@ class AvazuPartitioner(BasicPartitioner):
 
     num_classes = 2
     num_features = 16
+
+class BreasCancerPartitioner(BasicPartitioner):
+
+    num_classes = 2
+    num_features = 31
+
+class GimmeCreditPartitioner(BasicPartitioner):
+
+    num_classes = 2
+    num_features = 11
