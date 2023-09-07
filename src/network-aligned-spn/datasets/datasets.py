@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset
 from torch import FloatTensor, LongTensor
-from sklearn.preprocessing import StandardScaler, TargetEncoder
+from sklearn.preprocessing import StandardScaler, TargetEncoder, RobustScaler
+from sklearn.experimental.enable_iterative_imputer import IterativeImputer
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd 
@@ -67,7 +68,86 @@ class Avazu(TabularDataset):
             self.features = torch.from_numpy(X_test)
             self.targets = torch.from_numpy(y_test.to_numpy())
 
+class BreastCancer(TabularDataset):
+
+    def __init__(self, path, split='train') -> None:
+        super().__init__()
+        self.data = pd.read_csv(os.path.join(path, 'data.csv'))
+        X_train, X_valid, X_test, y_train, y_valid, y_test = self._preprocess()
+        if split == 'train':
+            self.features = X_train
+            self.targets = y_train
+        elif split == 'test':
+            self.features = X_test
+            self.targets = y_test
+        elif split == 'valid':
+            self.features = X_valid
+            self.targets = y_valid
+
+    def _preprocess(self):
+        self.data.drop(columns=['id'], inplace=True)
+        y = self.data['diagnosis']
+        x = self.data.drop(columns=['diagnosis'])
+        y.iloc[y == 'M'] = 1
+        y.iloc[y == 'B'] = 0
+        x, y = x.to_numpy(), y.to_numpy()
+
+        X_train, X_valid, y_train, y_valid = train_test_split(x, y, stratify=y, test_size=0.3, random_state= 42)
+        sc = StandardScaler()
+        X_train = sc.fit_transform(X_train)
+        X_valid = sc.transform(X_valid)
+        X_test = sc.transform(X_test)
+
+        X_train = torch.from_numpy(X_train)
+        X_valid = torch.from_numpy(X_valid)
+        X_test = torch.from_numpy(X_test)
+        y_train = torch.from_numpy(y_train.to_numpy())
+        y_valid = torch.from_numpy(y_valid.to_numpy())
+        y_test = torch.from_numpy(y_test.to_numpy())
+        return X_train, X_valid, X_test, y_train, y_valid, y_test
+
+class GimmeCredit(TabularDataset):
+
+    def __init__(self, path, split='train') -> None:
+        super().__init__()
+        self.train_data = pd.read_csv(os.path.join(path, 'cs-training.csv'))
+        self.test_data = pd.read_csv(os.path.join(path, 'cs-test.csv'))
+        X_train, X_valid, X_test, y_train, y_valid, y_test = self._preprocess()
+        if split == 'train':
+            self.features = X_train
+            self.targets = y_train
+        elif split == 'test':
+            self.features = X_test
+            self.targets = y_test
+        elif split == 'valid':
+            self.features = X_valid
+            self.targets = y_valid
         
+    def _preprocess(self):
+        self.train_data = self.train_data[self.train_data['age'] > 21] # filter outliers 
+        y = self.train_data['SeriousDlqin2yrs'].to_numpy()
+        X = self.train_data.drop(columns=['SeriousDlqin2yrs']).to_numpy()
+        y_test = self.test_data['SeriousDlqin2yrs'].to_numpy()
+        X_test = self.test_data.drop(columns=['SeriousDlqin2yrs'])
+        X_train, X_valid, y_train, y_valid = train_test_split(X,y,test_size=0.3,random_state=42)
+        sc = RobustScaler()
+        X_train = sc.fit_transform(X_train)
+        X_valid = sc.transform(X_valid)
+        X_test = sc.transform(X_test)
+
+        imputer = IterativeImputer()
+        X_train = imputer.fit_transform(X_train)
+        X_test = imputer.fit_transform(X_test)
+
+        X_train = torch.from_numpy(X_train)
+        X_valid = torch.from_numpy(X_valid)
+        X_test = torch.from_numpy(X_test)
+        y_train = torch.from_numpy(y_train)
+        y_valid = torch.from_numpy(y_valid)
+        y_test = torch.from_numpy(y_test)
+        return X_train, X_valid, X_test, y_train, y_valid, y_test
+
+
 class Income(TabularDataset):
 
     def __init__(self, path, split='train') -> None:

@@ -9,6 +9,7 @@ import fedlab.contrib.algorithm as client
 import fedlab.contrib.algorithm.basic_server as server
 from fedlab.models.mlp import MLP
 from fedlab.models.cnn import CNN_MNIST, CNN_CIFAR10
+from client_trainers import TabNetFedAvgSerialClientTrainer, TabNetFedProxSerialClientTrainer, TabNetScaffoldSerialClientTrainer
 from datasets.utils import get_horizontal_train_data, get_test_dataset
 from utils import evaluate_binary
 import torch
@@ -18,6 +19,46 @@ import pandas as pd
 from models import AlexNet
 from vit_pytorch import SimpleViT
 import rtpt
+from pytorch_tabnet.tab_network import TabNet
+
+# hyperparameters from TabNet paper: https://arxiv.org/pdf/1908.07442.pdf
+tabnet_hyperparams = {
+    'income': {
+        'cat_idx': [1, 3, 5, 6, 7, 8, 12],
+        'cat_dim': [9, 16, 7, 15, 6, 5, 2, 42],
+        'cat_emb_dim': 2,
+        'n_a': 16,
+        'n_d': 16,
+        'epsilon': 0.0001,
+        'gamma': 1.5,
+        'n_steps': 5,
+        'virtual_batch_size': 128
+    },
+
+    'fct': {
+        'cat_idx': list(range(11, 55)),
+        'cat_dim': [2]*44,
+        'cat_emb_dim': 1,
+        'n_a': 64,
+        'n_d': 64,
+        'epsilon': 0.0001,
+        'gamma': 1.5,
+        'n_steps': 5,
+        'virtual_batch_size': 512    
+    },
+
+    'higgs': {
+        'cat_idx': [22],
+        'cat_dim': [4],
+        'cat_emb_dim': 1,
+        'n_a': 26,
+        'n_d': 24,
+        'epsilon': 0.000001,
+        'gamma': 1.5,
+        'n_steps': 5,
+        'virtual_batch_size': 512
+    }
+}
 
 class EvalPipeline(StandalonePipeline):
     def __init__(self, handler, trainer, test_loader, criterion, evaluate, args):
@@ -104,17 +145,30 @@ def run_pipeline(args):
                 channels=3
             )
     else:
-        model = nn.Sequential(
-            MLP(dataset.in_dim, dataset.out_dim),
-            nn.Softmax())
+        if args.model == 'mlp':
+            model = nn.Sequential(
+                MLP(dataset.in_dim, dataset.out_dim),
+                nn.Softmax())
+        elif args.model == 'tabnet':
+            model = TabNet(**tabnet_hyperparams[args.dataset])
 
     cuda = torch.cuda.is_available()
+    device = torch.device(f'cuda:{args.gpu}') if cuda else torch.device('cpu')
     if args.algorithm == 'fedavg':
-        trainer = client.FedAvgSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+        if args.model == 'tabnet':
+            trainer = TabNetFedAvgSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+        else:
+            trainer = client.FedAvgSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
     elif args.algorithm == 'scaffold':
-        trainer = client.ScaffoldSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+        if args.model == 'tabnet':
+            trainer = TabNetScaffoldSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+        else:
+            trainer = client.ScaffoldSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
     elif args.algorithm == 'fedprox':
-        trainer = client.FedProxSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+        if args.model == 'tabnet':
+            trainer = TabNetFedProxSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+        else:
+            trainer = client.FedProxSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
     trainer.setup_dataset(dataset)
     trainer.setup_optim(args.epochs, args.batch_size, args.lr)
 

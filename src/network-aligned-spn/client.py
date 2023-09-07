@@ -8,12 +8,14 @@ from torch.utils.data import DataLoader
 from rtpt import RTPT
 import torch
 from spn.algorithms.LearningWrappers import learn_mspn
-from spn.structure.Base import Context
+from spn.structure.Base import Context, Sum
 from spn.algorithms.EM import EM_optimization
 import context
 import utils
 from einet.einet import Einet, EinetConfig
 from einet.distributions.normal import RatNormal
+from sklearn.cluster import KMeans
+import numpy as np
 
 n_gpus = 1 if torch.cuda.is_available() else 0
 @ray.remote(num_gpus=n_gpus)
@@ -83,8 +85,12 @@ class EinetNode:
 @ray.remote
 class FlowNode:
 
-    def __init__(self, dataset) -> None:
+    def __init__(self, dataset, spn_structure, num_clusters, setting, glueing) -> None:
         self.dataset = dataset
+        self.spn_structure = spn_structure
+        self.num_clusters = num_clusters
+        self.setting = setting
+        self.glueing = glueing
         self._rtpt = RTPT('JS', 'FedSPN', 1)
         self._rtpt.start()
         self.subspaces = []
@@ -92,12 +98,83 @@ class FlowNode:
 
     def train(self):
         for subspace, train_data in self.subspaces:
+            if self.spn_structure == 'learned':
+                self._train_learned(subspace, train_data)
+            elif self.spn_structure == 'rat':
+                self._train_rat(subspace, train_data)
+
+    def _train_learned(self, subspace, train_data):
+        if self.num_clusters > 1:
+            kmeans = KMeans(self.num_clusters)
+            clusters = kmeans.fit_predict(train_data)
+            cluster_spns = []
+            for c in np.unique(clusters):
+                idx = np.argwhere(clusters == c)
+                subset = train_data[idx]
+                ctxt = Context(meta_types=[context.ctxts[self.dataset][i] for i in subspace])
+                ctxt.add_domains(subset)
+                spn = learn_mspn(subset, ctxt)
+                spn = utils.adjust_scope(spn, subspace)
+                cluster_spns.append(spn)
+            if self.setting == 'horizontal' or self.glueing == 'naive':
+                spn = self._build_cluster_mixture(cluster_spns, clusters)
+                self.spns[tuple(subspace)] = [spn]
+            else:
+                self.spns[tuple(subspace)] = cluster_spns
+        else:
             ctxt = Context(meta_types=[context.ctxts[self.dataset][i] for i in subspace])
             ctxt.add_domains(train_data)
             spn = learn_mspn(train_data, ctxt)
-            EM_optimization(spn, train_data, iterations=5)
             spn = utils.adjust_scope(spn, subspace)
-            self.spns[tuple(subspace)] = spn
+            self.spns[tuple(subspace)] = [spn]
+            
+
+    def _train_rat(self, subspace, train_data):
+        if self.num_clusters > 1:
+            kmeans = KMeans(self.num_clusters)
+            clusters = kmeans.fit_predict(train_data)
+            cluster_spns = []
+            for c in np.unique(clusters):
+                idx = np.argwhere(clusters == c)
+                subset = train_data[idx]
+                spn = self._build_rat_spn(subspace, train_data.shape[1])
+                EM_optimization(spn, subset)
+                spn = utils.adjust_scope(spn, subspace)
+                cluster_spns.append(spn)
+            if self.setting == 'horizontal' or self.glueing == 'naive':
+                spn = self._build_cluster_mixture(cluster_spns, clusters)
+                self.spns[tuple(subspace)] = [spn]
+            else:
+                self.spns[tuple(subspace)] = cluster_spns
+        else:
+            spn = self._build_rat_spn(subspace, train_data.shape[1])
+            EM_optimization(spn, train_data)
+            spn = utils.adjust_scope(spn, subspace)
+            self.spns[tuple(subspace)] = [spn]
+
+    def _build_cluster_mixture(spns, clusters):
+        assert len(spns) == len(np.unique(clusters))
+        root = Sum()
+        weights = []
+        scopes = []
+        for s in spns:
+            scopes += list(s.scope)
+        root.scope = list(set(scopes))
+        for c in np.unique(clusters):
+            w = np.argwhere(c == clusters).sum() / len(clusters)
+            weights.append(w)
+        root.weights = np.array(weights)
+        root = utils.reassign_node_ids(root)
+        return root
+
+
+    def _build_rat_spn(self, subspace, num_vars):
+        region_graph = utils.random_region_graph(0, list(range(num_vars)), [])
+        dists = {i: context.node_types[i] for i in subspace}
+        curr_layer = [n for n in region_graph.nodes if len(list(region_graph.pred[n])) == 0]
+        spn = utils.region_graph_to_spn(region_graph, curr_layer, dists)
+        spn = utils.reassign_node_ids(spn)
+        return spn
 
     def get_feature_ids(self):
         """
@@ -116,4 +193,3 @@ class FlowNode:
     
     def assign_subset(self, subspace_with_data):
         self.subspaces.append(subspace_with_data)
-

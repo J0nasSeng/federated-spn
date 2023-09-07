@@ -1,6 +1,6 @@
 from .datasets import TabularDataset
 import numpy as np
-from datasets.datasets import Avazu, Income
+from datasets.datasets import Avazu, Income, BreastCancer, GimmeCredit
 from torchvision.datasets import MNIST
 import torchvision
 from torch.utils.data import TensorDataset, DataLoader
@@ -41,20 +41,24 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
         partitioned_data.append(data[idx])
     return partitioned_data
 
-def get_vertical_train_data(ds, num_clients):
-    if ds == 'income':
-        columns = 15
-        if num_clients > 5:
-            raise ValueError("'num_clients' must be smaller than 6.")
+def get_vertical_train_data(ds, num_clients, rand_perm=False):
+    
+    if ds in ['income', 'breast-cancer', 'credit']:
+        if ds == 'income':
+            dataset = Income('../../datasets/income/', split='train')
+        elif ds == 'breast-cancer':
+            dataset = BreastCancer('../../datasets/breast-cancer/', split='train')
+        elif ds == 'credit':
+            dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='train')
+        features = dataset.features.numpy()
+        targets = dataset.targets.numpy()
+        data = np.hstack([features, targets.reshape(-1, 1)])
+        columns = data.shape[1]
         cols = np.arange(columns)
-        cols = np.random.permutation(cols)
+        if rand_perm:
+            cols = np.random.permutation(cols)
         split_cols = np.array_split(cols, num_clients)
         split_cols = [list(s) for s in split_cols]
-
-        dataset = Income('../../datasets/income/', split='train')
-        np_features = dataset.features.numpy()
-        np_targets = dataset.targets.numpy()
-        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
         client_data = [data[:, s] for s in split_cols]
         return client_data, split_cols
 
@@ -122,22 +126,23 @@ def split_dataset_hybrid(data, num_clients, num_cols, min_dim_frac, max_dim_frac
         subspace_data = data[:, subspace]
         c_data = subspace_data[cidx]
         client_data.append(c_data)
-    return client_data, client_cols
+    return client_data, client_cols, client_idx
     
 def get_hybrid_train_data(ds, num_clients, min_dim_frac=0.25, max_dim_frac=0.5,
                           sample_frac=None, seed=111):
-    if ds == 'income':
-        columns = 15
-        if num_clients > 5:
-            raise ValueError("'num_clients' must be smaller than 6.")
-
-        dataset = Income('../../datasets/income/', split='train')
-        np_features = dataset.features.numpy()
-        np_targets = dataset.targets.numpy()
-        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
-        client_data, subspaces = split_dataset_hybrid(data, num_clients, columns, 
+    if ds in ['income', 'breast-cancer', 'credit']:
+        if ds == 'income':
+            dataset = Income('../../datasets/income/', split='train')
+        elif ds == 'breast-cancer':
+            dataset = BreastCancer('../../datasets/breast-cancer/', split='train')
+        elif ds == 'credit':
+            dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='train')
+        features = dataset.features.numpy()
+        targets = dataset.targets.numpy()
+        data = np.hstack([features, targets.reshape(-1, 1)])
+        client_data, subspaces, client_idx = split_dataset_hybrid(data, num_clients, columns, 
                                                       min_dim_frac, max_dim_frac, sample_frac, seed)
-        return client_data, subspaces
+        return client_data, subspaces, client_idx
 
     elif ds == 'mnist':
         columns = (28*28) + 1
@@ -153,9 +158,9 @@ def get_hybrid_train_data(ds, num_clients, min_dim_frac=0.25, max_dim_frac=0.5,
         imgs /= 255.
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets)).astype(np.float64)
-        client_data, subspaces = split_dataset_hybrid(data, num_clients, columns, 
+        client_data, subspaces, client_idx = split_dataset_hybrid(data, num_clients, columns, 
                                                       min_dim_frac, max_dim_frac, sample_frac, seed)
-        return client_data, subspaces
+        return client_data, subspaces, client_idx
     
     elif ds == 'avazu':
         columns = 21
@@ -170,8 +175,13 @@ def get_hybrid_train_data(ds, num_clients, min_dim_frac=0.25, max_dim_frac=0.5,
         return client_data, subspaces
     
 def get_test_data(ds):
-    if ds == 'income':
-        dataset = Income('../../datasets/income/', split='test')
+    if ds in ['income', 'breast-cancer', 'credit']:
+        if ds == 'income':
+            dataset = Income('../../datasets/income/', split='test')
+        elif ds == 'breast-cancer':
+            dataset = BreastCancer('../../datasets/breast-cancer/', split='test')
+        elif ds == 'credit':
+            dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='test')
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))

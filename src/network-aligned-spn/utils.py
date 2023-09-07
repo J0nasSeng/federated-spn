@@ -216,3 +216,39 @@ def adjust_scope(spn, space):
         new_sc = [scope_mapping[i] for i in sc]
         n.scope = new_sc
     return spn
+
+def build_fedspn_head(client_cluster_spns):
+    num_clients = len(client_cluster_spns)
+    # assume num clusters is equal on all clients 
+    num_clusters = len(client_cluster_spns[0])
+    clusters = list(range(num_clusters))
+    prods = {}
+    for l in range(1, num_clients):
+        for comb in product(*[clusters]*num_clients):
+            prefix = list(comb)[:l]
+            next_node = list(comb)[l]
+            prod_id = tuple(prefix + [next_node])
+            if l > 1:
+                # connect product node of last layer with next_node's SPN of l-the client
+                relevant_spns = [prods[tuple(prefix)], client_cluster_spns[l][next_node]]
+            else:
+                # first product layer -> connect all client SPNs of a certain prod_id
+                relevant_spns = [client_cluster_spns[i][j] for i,j in enumerate(prod_id)]
+            scopes = [set(s.scope) for s in relevant_spns]
+            prod_scope = list(set().union(*scopes))
+            prod = Product(relevant_spns)
+            prod.scope = prod_scope
+            prods[prod_id] = prod
+
+    all_scopes = set()
+    for cluster_spns in client_cluster_spns:
+        for s in cluster_spns:
+            all_scopes = all_scopes.union(set(s.scope))
+    
+    root_children = [n for prefix, n in prods.items() if len(prefix) == num_clients]
+    weights = softmax(np.zeros(len(root_children)), 1)
+    #weights = softmax(np.random.normal(0, 0.5, len(root_children)))
+    root = Sum(weights, root_children)
+    root.scope = list(all_scopes)
+    root = reassign_node_ids(root)
+    return root

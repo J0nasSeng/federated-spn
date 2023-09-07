@@ -17,3 +17,16 @@ ctxts['income'][14] = MetaType.BINARY
 ctxts['income'][15] = MetaType.BINARY
 ctxts['mnist'][(28*28)] = MetaType.DISCRETE
 ctxts['avazu'][0] = MetaType.BINARY
+
+node_types = {
+    # TODO: manual assignment
+    'income': {
+
+    },
+    'breast-cancer': {
+
+    },
+    'credit': {
+
+    }
+}
