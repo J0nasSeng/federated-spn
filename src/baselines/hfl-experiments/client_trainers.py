@@ -9,7 +9,7 @@ class TabNetFedAvgSerialClientTrainer(SGDSerialClientTrainer):
     def __init__(self, model, num_clients, cuda=False, device=None, logger=None, personal=False) -> None:
         super().__init__(model, num_clients, cuda, device, logger, personal)
         self.optimizer = Adam(self.model.parameters(), 0.02)
-        self.lr_scheduler = ExponentialLR(self.optimizer, 0.9)
+        self.lr_scheduler = ExponentialLR(self.optimizer, 0.99)
 
 
     """Federated client with local SGD solver."""
@@ -32,8 +32,8 @@ class TabNetFedAvgSerialClientTrainer(SGDSerialClientTrainer):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-            if e % 10 == 0:
-                self.lr_scheduler.step()
+                if e % 2 == 0:
+                    self.lr_scheduler.step()
 
         return [self.model_parameters, data_size]
     

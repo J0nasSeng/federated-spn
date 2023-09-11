@@ -10,6 +10,12 @@ ctxts = {
     },
     'avazu': {
         i: MetaType.REAL for i in range(1, 26)
+    },
+    'credit': {
+        i: MetaType.DISCRETE for i in range(5, 9)
+    },
+    'breast-cancer': {
+        i: MetaType.REAL for i in range(30)
     }
 }
 
@@ -17,16 +23,11 @@ ctxts['income'][14] = MetaType.BINARY
 ctxts['income'][15] = MetaType.BINARY
 ctxts['mnist'][(28*28)] = MetaType.DISCRETE
 ctxts['avazu'][0] = MetaType.BINARY
-
-node_types = {
-    # TODO: manual assignment
-    'income': {
-
-    },
-    'breast-cancer': {
-
-    },
-    'credit': {
-
-    }
-}
+ctxts['credit'][9] = MetaType.REAL
+ctxts['credit'][10] = MetaType.BINARY
+ctxts['credit'][0] = MetaType.REAL
+ctxts['credit'][1] = MetaType.DISCRETE
+ctxts['credit'][2] = MetaType.DISCRETE
+ctxts['credit'][3] = MetaType.REAL
+ctxts['credit'][4] = MetaType.REAL
+ctxts['breast-cancer'][30] = MetaType.BINARY

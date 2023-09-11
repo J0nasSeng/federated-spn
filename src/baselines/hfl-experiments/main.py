@@ -20,24 +20,26 @@ from models import AlexNet
 from vit_pytorch import SimpleViT
 import rtpt
 from pytorch_tabnet.tab_network import TabNet
+from pytorch_tabnet.utils import create_group_matrix
 
 # hyperparameters from TabNet paper: https://arxiv.org/pdf/1908.07442.pdf
 tabnet_hyperparams = {
     'income': {
-        'cat_idx': [1, 3, 5, 6, 7, 8, 12],
-        'cat_dim': [9, 16, 7, 15, 6, 5, 2, 42],
-        'cat_emb_dim': 2,
+        'cat_idxs': [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+        'cat_dims': [74, 9, 16, 16, 7, 15, 6, 5, 2, 109, 52, 94, 42],
+        'cat_emb_dim': [2] * 13,
         'n_a': 16,
         'n_d': 16,
         'epsilon': 0.0001,
         'gamma': 1.5,
         'n_steps': 5,
-        'virtual_batch_size': 128
+        'virtual_batch_size': 128,
+        'grouped_features': [[0, 1, 2], [8, 9, 10]]
     },
 
     'fct': {
-        'cat_idx': list(range(11, 55)),
-        'cat_dim': [2]*44,
+        'cat_idxs': list(range(11, 55)),
+        'cat_dims': [2]*44,
         'cat_emb_dim': 1,
         'n_a': 64,
         'n_d': 64,
@@ -48,8 +50,8 @@ tabnet_hyperparams = {
     },
 
     'higgs': {
-        'cat_idx': [22],
-        'cat_dim': [4],
+        'cat_idxs': [22],
+        'cat_dims': [4],
         'cat_emb_dim': 1,
         'n_a': 26,
         'n_d': 24,
@@ -57,6 +59,32 @@ tabnet_hyperparams = {
         'gamma': 1.5,
         'n_steps': 5,
         'virtual_batch_size': 512
+    },
+
+    'breast-cancer': {
+        'cat_idxs': [],
+        'cat_dims': [],
+        'cat_emb_dim': 1,
+        'n_a': 26,
+        'n_d': 24,
+        'epsilon': 0.000001,
+        'gamma': 1.5,
+        'n_steps': 5,
+        'virtual_batch_size': 128,
+        'grouped_features': [list(range(30))]
+    },
+
+    'credit': {
+        'cat_idxs': [1, 2, 5, 6, 7, 8, 9],
+        'cat_dims': [84, 16, 58, 19, 28, 13, 13],
+        'cat_emb_dim': [1, 1, 1, 1, 1, 1, 1],
+        'n_a': 26,
+        'n_d': 24,
+        'epsilon': 0.001,
+        'gamma': 1.5,
+        'n_steps': 5,
+        'virtual_batch_size': 512,
+        'grouped_features': [[1, 2, 5, 6, 7, 8, 9], [0, 3, 4]]
     }
 }
 
@@ -69,7 +97,7 @@ class EvalPipeline(StandalonePipeline):
         self.criterion = criterion
         self.evaluate = evaluate
         self.args = args
-        self.rtpt = rtpt.RTPT('JS', 'ViT_Baseline', args.comm_rounds)
+        self.rtpt = rtpt.RTPT('JS', 'FedSPN_Baseline', args.comm_rounds)
         self.rtpt.start()
         
     def main(self):
@@ -88,8 +116,13 @@ class EvalPipeline(StandalonePipeline):
                 self.handler.load(pack)
 
             self.rtpt.step()
-            loss, acc = self.evaluate(self.handler.model, self.criterion, self.test_loader)
-            print("Round {}, Loss {:.4f}, Test Accuracy {:.4f}".format(t, loss, acc))
+            evaluation = self.evaluate(self.handler.model, self.criterion, self.test_loader)
+            if len(evaluation) == 2:
+                loss, acc = evaluation
+                print("Round {}, Loss {:.4f}, Test Accuracy {:.4f}".format(t, loss, acc))
+            elif len(evaluation) == 4:
+                loss, acc, f1_micro, f1_macro = evaluation
+                print("Round {}, Loss {:.4f}, Test Accuracy {:.4f}, F1-Micro {:.4f}, F1-Macro {:.4f}".format(t, loss, acc, f1_micro, f1_macro))
             t+=1
             self.loss.append(loss)
             self.acc.append(acc)
@@ -115,6 +148,8 @@ def run_pipeline(args):
     if args.partitioning == 'iid':
         args.dir_alpha = 0
     dataset = get_horizontal_train_data(args.dataset, args.num_clients, args.partitioning)
+    cuda = torch.cuda.is_available() if args.gpu != -1 else False
+    device = torch.device(f'cuda:{args.gpu}') if cuda else torch.device('cpu')
     
     if args.dataset == 'mnist':
         if args.model == 'cnn':
@@ -150,29 +185,30 @@ def run_pipeline(args):
                 MLP(dataset.in_dim, dataset.out_dim),
                 nn.Softmax())
         elif args.model == 'tabnet':
-            model = TabNet(**tabnet_hyperparams[args.dataset])
+            group_att_mat = create_group_matrix(tabnet_hyperparams[args.dataset]['grouped_features'], dataset.in_dim)
+            del tabnet_hyperparams[args.dataset]['grouped_features']
+            group_att_mat = group_att_mat.to(device=device)
+            model = TabNet(dataset.in_dim, dataset.out_dim, group_attention_matrix=group_att_mat, **tabnet_hyperparams[args.dataset])
 
-    cuda = torch.cuda.is_available()
-    device = torch.device(f'cuda:{args.gpu}') if cuda else torch.device('cpu')
     if args.algorithm == 'fedavg':
         if args.model == 'tabnet':
-            trainer = TabNetFedAvgSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+            trainer = TabNetFedAvgSerialClientTrainer(model, args.num_clients, cuda, device)
         else:
-            trainer = client.FedAvgSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+            trainer = client.FedAvgSerialClientTrainer(model, args.num_clients, cuda, device)
     elif args.algorithm == 'scaffold':
         if args.model == 'tabnet':
-            trainer = TabNetScaffoldSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+            trainer = TabNetScaffoldSerialClientTrainer(model, args.num_clients, cuda, device)
         else:
-            trainer = client.ScaffoldSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+            trainer = client.ScaffoldSerialClientTrainer(model, args.num_clients, cuda, device)
     elif args.algorithm == 'fedprox':
         if args.model == 'tabnet':
-            trainer = TabNetFedProxSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+            trainer = TabNetFedProxSerialClientTrainer(model, args.num_clients, cuda, device)
         else:
-            trainer = client.FedProxSerialClientTrainer(model, args.num_clients, cuda, args.gpu)
+            trainer = client.FedProxSerialClientTrainer(model, args.num_clients, cuda, device)
     trainer.setup_dataset(dataset)
     trainer.setup_optim(args.epochs, args.batch_size, args.lr)
 
-    handler = server.SyncServerHandler(model, args.comm_rounds, args.sample_ratio, cuda, args.gpu)
+    handler = server.SyncServerHandler(model, args.comm_rounds, args.sample_ratio, cuda, device)
 
     test_data = get_test_dataset(args.dataset)
     test_loader = DataLoader(test_data, batch_size=1024)
@@ -183,7 +219,9 @@ def run_pipeline(args):
     else:
         criterion = nn.BCELoss()
         evaluate_fun = evaluate_binary
-    standalone_eval = EvalPipeline(handler=handler, trainer=trainer, test_loader=test_loader, criterion=criterion, evaluate=evaluate_fun)
+    standalone_eval = EvalPipeline(handler=handler, 
+                                   trainer=trainer, test_loader=test_loader, 
+                                   criterion=criterion, evaluate=evaluate_fun, args=args)
     standalone_eval.main()
 
 parser = argparse.ArgumentParser()

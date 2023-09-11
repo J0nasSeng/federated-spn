@@ -9,6 +9,7 @@ import networkx as nx
 import itertools
 from spn.structure.Base import get_nodes_by_type
 from spn.structure.Base import Sum, Product
+from spn.structure.leaves.parametric.Parametric import Gaussian, Categorical
 from itertools import product
 from scipy.special import softmax
 
@@ -246,9 +247,21 @@ def build_fedspn_head(client_cluster_spns):
             all_scopes = all_scopes.union(set(s.scope))
     
     root_children = [n for prefix, n in prods.items() if len(prefix) == num_clients]
-    weights = softmax(np.zeros(len(root_children)), 1)
+    weights = softmax(np.zeros(len(root_children)))
     #weights = softmax(np.random.normal(0, 0.5, len(root_children)))
     root = Sum(weights, root_children)
     root.scope = list(all_scopes)
     root = reassign_node_ids(root)
     return root
+
+def infer_node_type(data, uniqe_limit=100):
+    types = []
+    for i  in range(data.shape[1]):
+        unique = len(np.unique(data[:, i]))
+        if unique < uniqe_limit:
+            params = {'p': np.repeat(1 / unique, unique)}
+            types.append((Categorical, params))
+        else:
+            params = {'mean': 0, 'stdev': 1}
+            types.append((Gaussian, params))
+    return types

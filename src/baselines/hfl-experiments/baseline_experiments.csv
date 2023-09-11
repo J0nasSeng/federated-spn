@@ -1,0 +1,6 @@
+,dataset,setting,rounds,clients,accuracy,skew
+0,credit,horizontal,50,2,0.6788590753348462,iid
+1,credit,horizontal,50,2,0.4965959150981177,iid
+2,credit,horizontal,50,2,0.7124994437769768,iid
+3,income,horizontal,50,2,0.6768274188656355,iid
+4,breast-cancer,horizontal,50,2,0.8604651162790697,iid

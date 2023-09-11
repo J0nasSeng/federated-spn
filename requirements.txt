@@ -88,3 +88,5 @@ fedlab==1.3.0
 fast-pytorch-kmeans
 omegaconf
 pytorch-lightning
+statsmodels
+xgboost

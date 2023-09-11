@@ -52,17 +52,10 @@ class SPFlowServer:
         for c in range(args.num_clients):
             logging.info(f'Train node {c}')
             node = FlowNode.remote(args.dataset, args.structure, args.num_clusters,
-                                   args.setting, args.glueing)
+                                   args.setting, args.glueing, args.cluster_by_label)
             nodes.append(node)
-            if args.setting == 'horizontal':
-                train_subset = train_data[c]
-                subspace = feature_spaces[c]
-            elif args.setting == 'vertical':
-                subspace = feature_spaces[c]
-                train_subset = train_data[c]
-            elif args.setting == 'hybrid':
-                subspace = feature_spaces[c]
-                train_subset = train_data[c]
+            train_subset = train_data[c]
+            subspace = feature_spaces[c]
             assign_jobs.append(node.assign_subset.remote((subspace, train_subset)))
         ray.get(assign_jobs)
             
@@ -99,6 +92,7 @@ class SPFlowServer:
         spn.scope = []
         for c in spn.children:
             spn.scope = list(set(spn.scope).union(set(c.scope)))
+        spn = utils.reassign_node_ids(spn)
         return spn
     
     def build_spn_verhyb_naive(self, feature_subspaces, nodes):
@@ -394,6 +388,9 @@ def main_einsum(args):
     return acc, f1_micro, f1_macro
 
 def main(args):
+    # some sanity checks
+    if args.cluster_by_label == 1:
+        assert args.setting == 'horizontal', 'Cannot cluster by label in vertical and hybrid setting'
 
     table_dict = {'architecture': [], 'dataset': [], 'setting': [], 
                   'clients': [], 'accuracy': [], 'f1_micro': [], 'f1_macro': [], 
@@ -409,7 +406,7 @@ def main(args):
         elif args.implementation == 'einsum':
             acc, f1_micro, f1_macro = main_einsum(args)
         else:
-            raise ValueError("Structure must be 'learned' or 'rat'")
+            raise ValueError("Implementation must be 'spflow' or 'einsum'")
         table_dict['architecture'].append(args.structure)
         table_dict['accuracy'].append(acc)
         table_dict['clients'].append(args.num_clients)
@@ -436,9 +433,10 @@ parser.add_argument('--sample-frac', default=-1., type=float)
 parser.add_argument('--num-experiments', default=1, type=int)
 parser.add_argument('--dir-alpha', default=0.2, type=float)
 parser.add_argument('--batch-size', default=64, type=int)
-parser.add_argument('--num-clusters', default=2)
+parser.add_argument('--num-clusters', default=2, type=int)
 parser.add_argument('--glueing', default='combinatorial')
-parser.add_argument('--implementation', default='flowspn')
+parser.add_argument('--implementation', default='spflow')
+parser.add_argument('--cluster-by-label', default=0, type=int)
 
 args = parser.parse_args()
 
