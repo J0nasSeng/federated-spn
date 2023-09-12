@@ -142,7 +142,7 @@ class Income(TabularDataset):
         # undersample negative examples
         zero_idx = np.argwhere(y_train == 0).flatten()
         one_idx = np.argwhere(y_train == 1).flatten()
-        subidx = np.random.choice(zero_idx, int(len(zero_idx) * 0.4), False)
+        subidx = np.random.choice(zero_idx, int(len(zero_idx) * 0.9), False)
         subidx = np.concatenate((one_idx, subidx))
         X_train, y_train = X_train[subidx], y_train[subidx]
 

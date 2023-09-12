@@ -1,36 +1,29 @@
-from .datasets import TabularDataset
 import numpy as np
+from .datasets import Income, BreastCancer, GimmeCredit
+import torch
 
-def split_tabular_vertical(dataset: TabularDataset, 
-                   num_clients, p=None, seed=111):
+def get_vertical_data(ds, num_clients, rand_perm=False):
     
-    """
-        Split a given tabular dataset vertically,
-        i.e. distribute features across clients. 
-
-        :param dataset: Dataset to be split
-        :param num_clients: How many clients should dataset be split over?
-        :param p: weighting of clients, how many featues should each client hold?
-        :param seed: Seed for random feature choice
-    """
-    np.random.seed(seed)
-    num_features = dataset.features.shape[1]
-    assert num_clients <= num_features, 'Too many clients'
-
-    if p is None:
-        p = [1/num_clients for _ in range(num_clients)]
-
-    assert len(p) == num_clients, 'p and num_clients must match'
-
-    feature_idx = list(range(num_features))
-    client_datasets = []
-    for frac in p:
-        s = int(np.ceil(frac * num_clients))
-        idx = np.random.choice(feature_idx, size=s, replace=False)
-        feature_idx = [f for f in feature_idx if f not in idx]
-
-        x = dataset.features[:, idx]
-        ds = TabularDataset(x, dataset.targets)
-        client_datasets.append(ds)
-    
-    return client_datasets
+    if ds in ['income', 'breast-cancer', 'credit']:
+        if ds == 'income':
+            train_dataset = Income('../../../datasets/income/', split='train')
+            test_dataset = Income('../../../datasets/income/', split='test')
+        elif ds == 'breast-cancer':
+            train_dataset = BreastCancer('../../../datasets/breast-cancer/', split='train')
+            test_dataset = BreastCancer('../../../datasets/breast-cancer/', split='test')
+        elif ds == 'credit':
+            train_dataset = GimmeCredit('../../../datasets/GiveMeSomeCredit/', split='train')
+            test_dataset = GimmeCredit('../../../datasets/GiveMeSomeCredit/', split='test')
+        train_features = train_dataset.features
+        train_targets = train_dataset.targets.reshape(-1, 1)
+        test_features = test_dataset.features
+        test_targets = test_dataset.targets.reshape(-1, 1)
+        columns = train_features.shape[1]
+        cols = np.arange(columns)
+        if rand_perm:
+            cols = np.random.permutation(cols)
+        split_cols = np.array_split(cols, num_clients)
+        split_cols = [list(s) for s in split_cols]
+        client_train_data = [train_features[:, s] for s in split_cols]
+        client_test_data = [test_features[:, s] for s in split_cols]
+        return client_train_data, train_targets, client_test_data, test_targets, split_cols

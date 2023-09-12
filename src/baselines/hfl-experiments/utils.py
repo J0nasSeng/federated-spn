@@ -52,8 +52,8 @@ def evaluate_binary(model, criterion, test_loader):
             loss_.update(loss.item())
             acc_.update(torch.sum(predicted.eq(y_true)).item(), len(y_true))
             
-            f1_micro = f1_score(labels.numpy(), predicted.numpy(), average='micro')
-            f1_macro = f1_score(labels.numpy(), predicted.numpy(), average='macro')
+            f1_micro = f1_score(labels.cpu().numpy(), predicted.cpu().numpy(), average='micro')
+            f1_macro = f1_score(labels.cpu().numpy(), predicted.cpu().numpy(), average='macro')
             f1_micro_.update(f1_micro)
             f1_macro_.update(f1_macro)
 

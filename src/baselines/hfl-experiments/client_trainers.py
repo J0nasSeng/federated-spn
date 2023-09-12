@@ -6,10 +6,10 @@ from copy import deepcopy
 
 class TabNetFedAvgSerialClientTrainer(SGDSerialClientTrainer):
 
-    def __init__(self, model, num_clients, cuda=False, device=None, logger=None, personal=False) -> None:
-        super().__init__(model, num_clients, cuda, device, logger, personal)
-        self.optimizer = Adam(self.model.parameters(), 0.02)
-        self.lr_scheduler = ExponentialLR(self.optimizer, 0.99)
+    def __init__(self, model, args, cuda=False, device=None, logger=None, personal=False) -> None:
+        super().__init__(model, args.num_clients, cuda, device, logger, personal)
+        self.optimizer = Adam(self.model.parameters(), args.lr)
+        self.lr_scheduler = ExponentialLR(self.optimizer, args.gamma)
 
 
     """Federated client with local SGD solver."""
@@ -24,8 +24,9 @@ class TabNetFedAvgSerialClientTrainer(SGDSerialClientTrainer):
                     data = data.cuda(self.device)
                     target = target.cuda(self.device)
 
-                output, _ = self.model(data)
+                output, M_loss = self.model(data)
                 loss = self.criterion(output, target)
+                loss = loss - 1e-3*M_loss
 
                 data_size += len(target)
 
@@ -38,6 +39,10 @@ class TabNetFedAvgSerialClientTrainer(SGDSerialClientTrainer):
         return [self.model_parameters, data_size]
     
 class TabNetFedProxSerialClientTrainer(SGDSerialClientTrainer):
+
+    def __init__(self, model, args, cuda=False, device=None, logger=None, personal=False) -> None:
+        super().__init__(model, args.num_clients, cuda, device, logger, personal)
+
     def setup_optim(self, epochs, batch_size, lr, mu):
         super().setup_optim(epochs, batch_size, lr)
         self.mu = mu
@@ -84,6 +89,9 @@ class TabNetFedProxSerialClientTrainer(SGDSerialClientTrainer):
         return [self.model_parameters]
     
 class TabNetScaffoldSerialClientTrainer(SGDSerialClientTrainer):
+    def __init__(self, model, args, cuda=False, device=None, logger=None, personal=False) -> None:
+        super().__init__(model, args.num_clients, cuda, device, logger, personal)
+
     def setup_optim(self, epochs, batch_size, lr):
         super().setup_optim(epochs, batch_size, lr)
         self.cs = [None for _ in range(self.num_clients)]
@@ -109,8 +117,9 @@ class TabNetScaffoldSerialClientTrainer(SGDSerialClientTrainer):
                     data = data.cuda(self.device)
                     target = target.cuda(self.device)
 
-                output, _ = self.model(data)
+                output, M_loss = self.model(data)
                 loss = self.criterion(output, target)
+                loss = loss - 1e-3*M_loss
 
                 self.optimizer.zero_grad()
                 loss.backward()

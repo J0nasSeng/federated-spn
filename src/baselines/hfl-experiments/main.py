@@ -189,20 +189,20 @@ def run_pipeline(args):
             del tabnet_hyperparams[args.dataset]['grouped_features']
             group_att_mat = group_att_mat.to(device=device)
             model = TabNet(dataset.in_dim, dataset.out_dim, group_attention_matrix=group_att_mat, **tabnet_hyperparams[args.dataset])
-
+            print(list(model.parameters()))
     if args.algorithm == 'fedavg':
         if args.model == 'tabnet':
-            trainer = TabNetFedAvgSerialClientTrainer(model, args.num_clients, cuda, device)
+            trainer = TabNetFedAvgSerialClientTrainer(model, args, cuda, device)
         else:
             trainer = client.FedAvgSerialClientTrainer(model, args.num_clients, cuda, device)
     elif args.algorithm == 'scaffold':
         if args.model == 'tabnet':
-            trainer = TabNetScaffoldSerialClientTrainer(model, args.num_clients, cuda, device)
+            trainer = TabNetScaffoldSerialClientTrainer(model, args, cuda, device)
         else:
             trainer = client.ScaffoldSerialClientTrainer(model, args.num_clients, cuda, device)
     elif args.algorithm == 'fedprox':
         if args.model == 'tabnet':
-            trainer = TabNetFedProxSerialClientTrainer(model, args.num_clients, cuda, device)
+            trainer = TabNetFedProxSerialClientTrainer(model, args, cuda, device)
         else:
             trainer = client.FedProxSerialClientTrainer(model, args.num_clients, cuda, device)
     trainer.setup_dataset(dataset)
@@ -236,7 +236,8 @@ parser.add_argument('--partitioning', default='iid')
 parser.add_argument('--dir-alpha', default=0.2, type=float)
 parser.add_argument('--comm-rounds', default=10, type=int)
 parser.add_argument('--sample-ratio', default=1.0, type=float)
-parser.add_argument('--lr', default=0.01, type=float)
+parser.add_argument('--lr', default=0.02, type=float)
+parser.add_argument('--gamma', default=0.99, type=float)
 parser.add_argument('--model', default='vit')
 
 args = parser.parse_args()
