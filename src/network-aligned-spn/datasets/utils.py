@@ -50,7 +50,7 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
         partitioned_data.append(data[idx])
     return partitioned_data
 
-def get_vertical_train_data(ds, num_clients, rand_perm=False):
+def get_vertical_train_data(ds, num_clients, rand_perm=True):
     
     if ds in ['income', 'breast-cancer', 'credit']:
         if ds == 'income':
@@ -105,7 +105,7 @@ def get_vertical_train_data(ds, num_clients, rand_perm=False):
         client_data = [data[:, s] for s in split_cols]
         return client_data, split_cols
     
-def split_dataset_hybrid(data, num_clients, num_cols, min_dim_frac, max_dim_frac, sample_frac, seed):
+def split_dataset_hybrid(data, num_clients, num_cols, overlap_frac, sample_frac, seed):
     sample_frac = 1/num_clients if sample_frac is None else sample_frac
     np.random.seed(seed)
     cols_per_client = int(num_cols / num_clients)
@@ -128,16 +128,21 @@ def split_dataset_hybrid(data, num_clients, num_cols, min_dim_frac, max_dim_frac
     client_data = []
     idx = np.arange(data.shape[0])
     idx = np.random.permutation(idx)
-    client_idx = np.array_split(idx, num_clients)
+    client_overlap = np.random.choice(idx, int(overlap_frac*len(idx)))
+    client_indices = []
     for c in range(num_clients):
         subspace = np.array(client_cols[c])
-        cidx = client_idx[c]
+        subsample_size = int((1 / num_clients) * len(data))
+        client_idx = np.random.choice(idx, subsample_size)
+        client_idx = np.concatenate((client_idx, client_overlap))
+        client_idx_client_view = np.arange(len(client_idx))
         subspace_data = data[:, subspace]
-        c_data = subspace_data[cidx]
+        c_data = subspace_data[client_idx]
         client_data.append(c_data)
-    return client_data, client_cols, client_idx
+        client_indices.append((client_idx, client_idx_client_view))
+    return client_data, client_cols, client_indices
     
-def get_hybrid_train_data(ds, num_clients, min_dim_frac=0.25, max_dim_frac=0.5,
+def get_hybrid_train_data(ds, num_clients, overlap_frac=0.3,
                           sample_frac=None, seed=111):
     if ds in ['income', 'breast-cancer', 'credit']:
         if ds == 'income':
@@ -149,8 +154,8 @@ def get_hybrid_train_data(ds, num_clients, min_dim_frac=0.25, max_dim_frac=0.5,
         features = dataset.features.numpy()
         targets = dataset.targets.numpy()
         data = np.hstack([features, targets.reshape(-1, 1)])
-        client_data, subspaces, client_idx = split_dataset_hybrid(data, num_clients, columns, 
-                                                      min_dim_frac, max_dim_frac, sample_frac, seed)
+        client_data, subspaces, client_idx = split_dataset_hybrid(data, num_clients, data.shape[1], 
+                                                      overlap_frac, sample_frac, seed)
         return client_data, subspaces, client_idx
 
     elif ds == 'mnist':
@@ -168,7 +173,7 @@ def get_hybrid_train_data(ds, num_clients, min_dim_frac=0.25, max_dim_frac=0.5,
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets)).astype(np.float64)
         client_data, subspaces, client_idx = split_dataset_hybrid(data, num_clients, columns, 
-                                                      min_dim_frac, max_dim_frac, sample_frac, seed)
+                                                      overlap_frac, sample_frac, seed)
         return client_data, subspaces, client_idx
     
     elif ds == 'avazu':
@@ -180,7 +185,7 @@ def get_hybrid_train_data(ds, num_clients, min_dim_frac=0.25, max_dim_frac=0.5,
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))
         client_data, subspaces = split_dataset_hybrid(data, num_clients, columns, 
-                                                      min_dim_frac, max_dim_frac, sample_frac, seed)
+                                                      overlap_frac, sample_frac, seed)
         return client_data, subspaces
     
 def get_test_data(ds):

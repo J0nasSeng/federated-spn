@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd 
 import torch
 import os
-from datetime import datetime
 
 class TabularDataset(Dataset):
 
@@ -132,10 +131,6 @@ class GimmeCredit(TabularDataset):
         self.train_data = self.train_data[self.train_data['age'] > 21] # filter outliers
         self.train_data = self.train_data.drop(columns=['Unnamed: 0'])
         y = self.train_data['SeriousDlqin2yrs'].to_numpy()
-        #for c in self.train_data.columns:
-        #    if c != 'SeriousDlqin2yrs':
-                # avoid histogram domain error by adding a little noise to all continuous features
-        #        self.train_data.loc[:, c] += np.random.normal(0, 0.01, len(self.train_data[c]))
         X = self.train_data.drop(columns=['SeriousDlqin2yrs']).to_numpy()
         X_train, X_valid, y_train, y_valid = train_test_split(X,y,test_size=0.3,random_state=42)
         X_valid, X_test, y_valid, y_test = train_test_split(X_valid, y_valid, test_size=0.5, random_state=42)
@@ -152,7 +147,7 @@ class GimmeCredit(TabularDataset):
         # undersample negative examples
         zero_idx = np.argwhere(y_train == 0).flatten()
         one_idx = np.argwhere(y_train == 1).flatten()
-        subidx = np.random.choice(zero_idx, int(len(zero_idx) * 0.1), False)
+        subidx = np.random.choice(zero_idx, int(len(zero_idx) * 0.85), False)
         subidx = np.concatenate((one_idx, subidx))
         X_train, y_train = X_train[subidx], y_train[subidx]
 

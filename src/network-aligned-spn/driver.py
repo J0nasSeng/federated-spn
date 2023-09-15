@@ -310,7 +310,7 @@ def main_spflow(args):
         nodes = server.train(train_data, feature_spaces, args)
     elif args.setting == 'hybrid':
         sample_frac = None if args.sample_frac == -1 else args.sample_frac
-        train_data, feature_spaces, client_idx = get_hybrid_train_data(args.ds, args.num_clients, args.min_dim_frac, args.max_dim_frac, sample_frac)
+        train_data, feature_spaces, client_idx = get_hybrid_train_data(args.dataset, args.num_clients, args.overlap_frac_hybrid, sample_frac)
         nodes = server.train(train_data, feature_spaces, args)
 
     grouped_feature_spaces = utils.group_clients_by_subspace(feature_spaces)
@@ -320,9 +320,18 @@ def main_spflow(args):
         allowed_nodes_for_update = [n.id for n in added_nodes]
         if args.setting == 'hybrid':
             # align data based on client_idx
-            samples = [set(list(c)) for c in client_idx]
+            idx_maps = []
+            for cidx, cidx_view in client_idx:
+                m = {c: cv for c, cv in zip(cidx, cidx_view)}
+                idx_maps.append(m)
+            samples = [set(list(c)) for c, _ in client_idx]
             intersection = list(set.intersection(*samples))
-            data = [td[intersection] for td in train_data]
+            cidx_client_views = []
+            for idx in intersection:
+                cidx_views = [m[idx] for m in idx_maps]
+                cidx_client_views.append(cidx_views)
+            cidx_client_views = np.array(cidx_client_views).T
+            data = [td[idx] for td, idx in zip(train_data, cidx_client_views)]
             train_data = np.column_stack(data)
         else:
             train_data = np.column_stack(train_data)
@@ -427,8 +436,7 @@ parser.add_argument('--dataset', default='income')
 parser.add_argument('--task', default='classification')
 parser.add_argument('--sample-partitioning', default='iid')
 parser.add_argument('--structure', default='learned')
-parser.add_argument('--min-dim-frac', default=0.25, type=float)
-parser.add_argument('--max-dim-frac', default=0.5, type=float)
+parser.add_argument('--overlap-frac-hybrid', default=0.3, type=float)
 parser.add_argument('--sample-frac', default=-1., type=float)
 parser.add_argument('--num-experiments', default=1, type=int)
 parser.add_argument('--dir-alpha', default=0.2, type=float)
