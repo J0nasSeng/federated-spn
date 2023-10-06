@@ -72,7 +72,7 @@ class EinsumNetwork(torch.nn.Module):
         super(EinsumNetwork, self).__init__()
 
         self.param_nn = param_nn
-
+        self.last_params = None
         check_flag, check_msg = Graph.check_graph(graph)
         if not check_flag:
             raise AssertionError(check_msg)
@@ -157,6 +157,7 @@ class EinsumNetwork(torch.nn.Module):
         y_oh = F.one_hot(y, num_classes=1000)
         x_prev = torch.cat([x_prev, y_oh], dim=1)
         params = self.param_nn(x_prev)
+        self.last_params = params
         x_in = x_in.permute((0, 2, 3, 1))
         x_in = x_in.reshape(x_in.shape[0], config.num_vars, config.num_dims)
 

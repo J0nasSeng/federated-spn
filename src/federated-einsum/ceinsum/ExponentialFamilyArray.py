@@ -68,7 +68,7 @@ class ExponentialFamilyArray(torch.nn.Module):
         self.marginalization_idx = None
         self.marginalization_mask = None
 
-        self._use_em = use_em
+        self._use_em = False #use_em
         self._p_acc = None
         self._stats_acc = None
         self._online_em_frequency = None
@@ -230,7 +230,6 @@ class ExponentialFamilyArray(torch.nn.Module):
         :return: log-densities of implemented exponential family (Tensor).
                  Will be of shape (batch_size, self.num_var, *self.array_shape)
         """
-
         if self._use_em:
             #with torch.no_grad():
             theta = self.expectation_to_natural(params)
