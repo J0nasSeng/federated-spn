@@ -53,7 +53,7 @@ class SumLayer(Layer):
         """
         raise NotImplementedError
 
-    def _backtrack(self, dist_idx, node_idx, sample_idx, params, use_evidence=False, mode='sample', **kwargs):
+    def _backtrack(self, dist_idx, node_idx, sample_idx, params, use_evidence=False, mode='sample'):
         """
         Helper routine to implement EiNet backtracking, for sampling or MPE approximation.
 
@@ -122,7 +122,7 @@ class SumLayer(Layer):
             params = self.reparam(params)
         self._forward(params)
 
-    def backtrack(self, dist_idx, node_idx, sample_idx, use_evidence=False, mode='sample', **kwargs):
+    def backtrack(self, params, dist_idx, node_idx, sample_idx, use_evidence=False, mode='sample'):
         """
         Helper routine for backtracking in EiNets, see _sample(...) for details.
         """
@@ -134,7 +134,7 @@ class SumLayer(Layer):
         else:
             with torch.no_grad():
                 params = self.reparam(self.params)
-        return self._backtrack(dist_idx, node_idx, sample_idx, params, use_evidence, mode, **kwargs)
+        return self._backtrack(dist_idx, node_idx, sample_idx, params, use_evidence, mode)
 
     def em_purge(self):
         """ Discard em statistics."""
@@ -399,7 +399,7 @@ class EinsumLayer(SumLayer):
 
         self.prob = prob
 
-    def _backtrack(self, dist_idx, node_idx, sample_idx, params, use_evidence=False, mode='sample', **kwargs):
+    def _backtrack(self, dist_idx, node_idx, sample_idx, params, use_evidence=False, mode='sample'):
         """
         Helper routine for backtracking in EiNets.
 
@@ -544,7 +544,7 @@ class EinsumMixingLayer(SumLayer):
 
         self.prob = torch.log(output) + max_p[:, :, :, 0]
 
-    def _backtrack(self, dist_idx, node_idx, sample_idx, params, use_evidence=False, mode='sample', **kwargs):
+    def _backtrack(self, dist_idx, node_idx, sample_idx, params, use_evidence=False, mode='sample'):
         """Helper routine for backtracking in EiNets."""
         with torch.no_grad():
             if use_evidence:

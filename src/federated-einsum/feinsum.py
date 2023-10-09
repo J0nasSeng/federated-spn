@@ -32,7 +32,7 @@ def init_spn(device):
 
     if config.structure == 'poon-domingos':
         pd_delta = [[config.height / d, config.width / d] for d in config.pd_num_pieces]
-        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=[8], axes=[1])
+        graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=pd_delta)
     elif config.structure == 'binary-trees':
         graph = Graph.random_binary_trees(num_var=config.num_vars, depth=config.depth, num_repetitions=config.num_repetitions)
     elif config.structure == 'flat-binary-tree':
@@ -100,7 +100,7 @@ def train_mixture(dataset, clusters, encodings, cid, device_id):
 
     cluster_einets = []
     # do intra-cluster clustering to improve homogeinity
-    kmeans = KMeans(50)
+    kmeans = KMeans(5)
     encs = encodings[img_ids]
     cclusters = kmeans.fit_predict(encs)
 
@@ -110,11 +110,13 @@ def train_mixture(dataset, clusters, encodings, cid, device_id):
     
     for c in np.unique(cclusters):
         cluster_idx = np.argwhere(cclusters == c).flatten()
+        print(f"Cluster-size={len(cluster_idx)}")
         cluster_img_ids = [img_ids[i] for i in cluster_idx]
         sub_cluster_sizes.append(len(cluster_img_ids))
         subset = Subset(dataset, cluster_img_ids)
         loader = DataLoader(subset, batch_size=config.batch_size)
         einet = init_spn(device)
+        print([p.shape for p in einet.parameters()])
         einet = train(einet, loader, config.num_epochs, device, './checkpoints/', save_model=False)
         cluster_einets.append(einet)
         rt.step()
@@ -125,8 +127,13 @@ def train_mixture(dataset, clusters, encodings, cid, device_id):
 
     with open(f'./models/model_{cid}', 'wb') as f:
         pickle.dump((root_einets, len(img_ids)), f)
+    
+    samples = mixture.sample(25)
+    samples = samples.reshape(-1, config.height, config.width, config.num_dims)
+    img_path = os.path.join('./', 'samples.png')
+    save_image_stack(samples, 5, 5, img_path, margin_gray_val=0., frame=2, frame_gray_val=0.0)
 
-clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch.npy')
+clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch_10K.npy')
 encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
 
 transform = Compose([ToTensor(), Resize(112), CenterCrop(112)])
@@ -136,22 +143,23 @@ root_einets = []
 cluster_sizes = []
 processes = []
 
-unique_clusters = np.unique(clusters)
+unique_clusters = [2400] #np.unique(clusters)
 num_slices = int(np.ceil(len(unique_clusters) / config.num_processes))
 unique_clusters = np.array_split(unique_clusters, num_slices)
 
 # train einets in parallel. Start num_slices processes in parallel, wait
 # until they finished and start next batch
-for cluster_batch in unique_clusters:
-    processes = []
-    for i, rc in enumerate(cluster_batch):
-        device = i % config.num_processes
-        p = Process(target=train_mixture, args=(imagenet, clusters, encodings, rc, device))
-        p.start()
-        processes.append(p)
-    
-    for p in processes:
-        p.join()
+if __name__ == '__main__':
+    for cluster_batch in unique_clusters:
+        processes = []
+        for i, rc in enumerate(cluster_batch):
+            device = i % config.num_processes
+            p = Process(target=train_mixture, args=(imagenet, clusters, encodings, rc, device))
+            p.start()
+            processes.append(p)
+        
+        for p in processes:
+            p.join()
     
 
 

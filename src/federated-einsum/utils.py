@@ -60,7 +60,7 @@ def sample_matrix_categorical(p):
         return rand_idx
 
 def extract_image_patches(x, size=4, stride=4):
-    # x has shape [b, 3, 224, 224]
+    # x has shape [b, 3, h, w]
     patches = x.unfold(2, size, stride).unfold(3, size, stride)
     return patches
 
@@ -146,3 +146,8 @@ def set_einet_weights(einet, weights):
         assert w.shape == p.shape
         p.data = w
     return einet
+
+def softmax_temp(x, t=1.0, dim=1):
+    ex = torch.exp(x / t)
+    s = torch.sum(ex, dim=dim).unsqueeze(1)
+    return ex / s

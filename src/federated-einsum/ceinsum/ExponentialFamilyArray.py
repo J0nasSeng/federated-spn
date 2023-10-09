@@ -287,12 +287,12 @@ class ExponentialFamilyArray(torch.nn.Module):
 
         return output
 
-    def sample(self, num_samples=1, **kwargs):
+    def sample(self, params, num_samples=1, **kwargs):
         if self._use_em:
-            params = self.params
+            params = params
         else:
             with torch.no_grad():
-                params = self.reparam(self.params)
+                params = self.reparam(params)
         return self._sample(num_samples, params, **kwargs)
 
     def argmax(self, **kwargs):
@@ -390,7 +390,7 @@ def shift_last_axis_to(x, i):
 class NormalArray(ExponentialFamilyArray):
     """Implementation of Normal distribution."""
 
-    def __init__(self, num_var, num_dims, array_shape, min_var=0.0001, max_var=10., use_em=True):
+    def __init__(self, num_var, num_dims, array_shape, min_var=0.0001, max_var=10, use_em=True):
         super(NormalArray, self).__init__(num_var, num_dims, array_shape, 2 * num_dims, use_em=use_em)
         self.log_2pi = torch.tensor(1.8378770664093453)
         self.min_var = min_var

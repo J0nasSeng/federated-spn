@@ -91,7 +91,7 @@ class FactorizedLeafLayer(Layer):
         """
         self.prob = torch.einsum('bxir,xro->bio', self.ef_array(x, params), self.scope_tensor)
 
-    def backtrack(self, dist_idx, node_idx, mode='sample', **kwargs):
+    def backtrack(self, params, dist_idx, node_idx, mode='sample', **kwargs):
         """
         Backtrackng mechanism for EiNets.
 
@@ -107,7 +107,7 @@ class FactorizedLeafLayer(Layer):
         with torch.no_grad():
             N = len(dist_idx)
             if mode == 'sample':
-                ef_values = self.ef_array.sample(N, **kwargs)
+                ef_values = self.ef_array.sample(params, N, **kwargs)
             elif mode == 'argmax':
                 ef_values = self.ef_array.argmax(**kwargs)
             else:

@@ -67,10 +67,11 @@ class EinsumNetwork(torch.nn.Module):
     The class EinsumNetork mainly governs the layer-wise layout, initialization, forward() calls, EM learning, etc.
     """
 
-    def __init__(self, graph, param_nn, args=None):
+    def __init__(self, graph, param_nn, patch_size=(8, 8), args=None):
         """Make an EinsumNetwork."""
         super(EinsumNetwork, self).__init__()
 
+        self.px, self.py  = patch_size
         self.param_nn = param_nn
         self.last_params = None
         check_flag, check_msg = Graph.check_graph(graph)
@@ -148,16 +149,11 @@ class EinsumNetwork(torch.nn.Module):
     def forward(self, x, y, i, j):
         """Evaluate the EinsumNetwork feed forward."""
         # patch images and obtain 8x8 patches
-        patches = extract_image_patches(x, 8, 8)
+        patches = extract_image_patches(x, self.px, self.py)
         x_in = patches[:, :, i, j]
         x_prev = get_surrounding_patches(patches, i, j, x.device)
-        # flatten all previous patches and concat along feature dimension for NN
-        x_prev = [x.squeeze().reshape(x_in.shape[0], -1) for x in x_prev]
-        x_prev = torch.cat(x_prev, dim=1)
-        y_oh = F.one_hot(y, num_classes=1000)
-        x_prev = torch.cat([x_prev, y_oh], dim=1)
-        params = self.param_nn(x_prev)
-        self.last_params = params
+        # obtain einsum parameters
+        params = self.param_nn(x_prev, y)
         x_in = x_in.permute((0, 2, 3, 1))
         x_in = x_in.reshape(x_in.shape[0], config.num_vars, config.num_dims)
 
@@ -173,11 +169,10 @@ class EinsumNetwork(torch.nn.Module):
             lls += ll
         return -(lls / x_in.shape[0])
 
-    def backtrack(self, num_samples=1, class_idx=0, x=None, mode='sampling', **kwargs):
+    def backtrack(self, params, num_samples=1, class_idx=0, x=None, mode='sampling', **kwargs):
         """
         Perform backtracking; for sampling or MPE approximation.
         """
-
         sample_idx = {l: [] for l in self.einet_layers}
         dist_idx = {l: [] for l in self.einet_layers}
         reg_idx = {l: [] for l in self.einet_layers}
@@ -192,14 +187,19 @@ class EinsumNetwork(torch.nn.Module):
         dist_idx[root] = [class_idx] * num_samples
         reg_idx[root] = [0] * num_samples
 
-        for layer in reversed(self.einet_layers):
+        layer_idx = reversed(list(range(len(params))))
 
+        # go through network layer-by-layer, start with root
+        for lidx, layer in zip(layer_idx, reversed(self.einet_layers)):
+
+            layer_params = params[lidx][0] # [0] because we condition on only one sample
+            # change the params in kwargs to layer_params passed
             if not sample_idx[layer]:
                 continue
 
             if type(layer) == EinsumLayer:
-
-                ret = layer.backtrack(dist_idx[layer],
+                ret = layer.backtrack(layer_params,
+                                      dist_idx[layer],
                                       reg_idx[layer],
                                       sample_idx[layer],
                                       use_evidence=(x is not None),
@@ -219,7 +219,8 @@ class EinsumNetwork(torch.nn.Module):
 
             elif type(layer) == EinsumMixingLayer:
 
-                ret = layer.backtrack(dist_idx[layer],
+                ret = layer.backtrack(layer_params,
+                                      dist_idx[layer],
                                       reg_idx[layer],
                                       sample_idx[layer],
                                       use_evidence=(x is not None),
@@ -244,7 +245,7 @@ class EinsumNetwork(torch.nn.Module):
                     dist_idx_sample.append([dist_idx[layer][c] for c, i in enumerate(sample_idx[layer]) if i == sidx])
                     reg_idx_sample.append([reg_idx[layer][c] for c, i in enumerate(sample_idx[layer]) if i == sidx])
 
-                samples = layer.backtrack(dist_idx_sample, reg_idx_sample, mode=mode, **kwargs)
+                samples = layer.backtrack(layer_params, dist_idx_sample, reg_idx_sample, mode=mode, **kwargs)
 
                 if self.args.num_dims == 1:
                     samples = torch.squeeze(samples, 2)
@@ -256,11 +257,30 @@ class EinsumNetwork(torch.nn.Module):
 
                 return samples
 
-    def sample(self, num_samples=1, class_idx=0, x=None, **kwargs):
-        return self.backtrack(num_samples=num_samples, class_idx=class_idx, x=x, mode='sample', **kwargs)
+    def sample(self, x_con, y_con, i, j, num_samples=1, class_idx=0, x=None, **kwargs):
+        """
+            Sample condition on x_con (e.g. surrounding patches in an image)
+            x_con is assumed to have shape [3, 3, num_vars]
+        """
+        # patch images and obtain 8x8 patches
+        patches = extract_image_patches(x_con, self.px, self.py)
+        x_in = patches[:, :, i, j]
+        x_prev = get_surrounding_patches(patches, i, j, x_con.device)
+        params = self.param_nn(x_prev, y_con)
+        return self.backtrack(params, num_samples=num_samples, class_idx=class_idx, x=x, mode='sample', **kwargs)
 
-    def mpe(self, num_samples=1, class_idx=0, x=None, **kwargs):
-        return self.backtrack(num_samples=num_samples, class_idx=class_idx, x=x, mode='argmax', **kwargs)
+    def mpe(self, x_con, y_con, i, j, num_samples=1, class_idx=0, x=None, **kwargs):
+        # patch images and obtain 8x8 patches
+        patches = extract_image_patches(x_con, self.px, self.py)
+        x_in = patches[:, :, i, j]
+        x_prev = get_surrounding_patches(patches, i, j, x_con.device)
+        # flatten all previous patches and concat along feature dimension for NN
+        x_prev = [x.squeeze().reshape(x_in.shape[0], -1) for x in x_prev]
+        x_prev = torch.cat(x_prev, dim=1)
+        y_oh = F.one_hot(y_con, num_classes=1000).unsqueeze(0)
+        x_prev = torch.cat([x_prev, y_oh], dim=1)
+        params = self.param_nn(x_prev)
+        return self.backtrack(params, num_samples=num_samples, class_idx=class_idx, x=x, mode='argmax', **kwargs)
 
     def em_set_hyperparams(self, online_em_frequency, online_em_stepsize, purge=True):
         for l in self.einet_layers:
