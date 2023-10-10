@@ -13,6 +13,7 @@ from sklearn.cluster import KMeans
 from multiprocessing import Process
 import pickle
 from rtpt import RTPT
+import pandas as pd
 
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
@@ -56,27 +57,27 @@ def init_spn(device):
     einet.to(device)
     return einet
 
-def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_model=True):
+def train(img_ids, num_epochs, device_id, chk_path, cluster_count):
 
     """
     Training loop to train the SPN. Follows EM-procedure.
     """
-    #logging.info('Starting Training...')
+    logging.info('Starting Training...')
+    log_likelihoods = []
+    device = torch.device(f'cuda:{device_id}')
+    transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
+    imagenet = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
+    subset = Subset(imagenet, img_ids)
+    loader = DataLoader(subset, batch_size=config.batch_size, num_workers=2)
+    einet = init_spn(device)
     for epoch_count in range(num_epochs):
         einet.train()
 
-        if save_model and (epoch_count > 0 and epoch_count % config.checkpoint_freq == 0):
-            torch.save(einet, os.path.join(chk_path, f'chk_{epoch_count}.pt'))
-
         total_ll = 0.0
-        for i, (x, y) in enumerate(train_loader):
+        for i, (x, y) in enumerate(loader):
             x = x.to(device)
             x = x.permute((0, 2, 3, 1))
             x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
-            if mean is not None:
-                mean = mean.to(device)
-                mean = mean.reshape(1, config.num_vars, config.num_dims)
-                x -= mean
             ll_sample = einet.forward(x)
             #ll_sample = EinsumNetwork.log_likelihoods(outputs)
             log_likelihood = ll_sample.sum()
@@ -87,80 +88,43 @@ def train(einet, train_loader, num_epochs, device, chk_path, mean=None, save_mod
 
             #if i % 20 == 0:
                 #logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
-        total_ll = total_ll / (len(train_loader) * train_loader.batch_size)
+        total_ll = total_ll / (len(loader) * loader.batch_size)
+        log_likelihoods.append(total_ll)
         logging.info('Epoch {:03d} \t LL={:03f}'.format(epoch_count, total_ll))
 
         einet.em_update()
+    torch.save(einet, os.path.join(chk_path, f'chk_{cluster_count}.pt'))
+    df = pd.DataFrame(data=log_likelihoods, columns=['lls'])
+    df.to_csv(os.path.join(chk_path, f'chk_{cluster_count}.csv'))
     return einet
 
-def train_mixture(dataset, clusters, encodings, cid, device_id):
-    device = torch.device(f'cuda:{device_id}')
-    img_ids = np.argwhere(clusters == cid).flatten()
-    cluster_sizes.append(len(img_ids))
-
-    cluster_einets = []
-    # do intra-cluster clustering to improve homogeinity
-    kmeans = KMeans(5)
-    encs = encodings[img_ids]
-    cclusters = kmeans.fit_predict(encs)
-
-    rt = RTPT('JS', 'FEinsum', len(np.unique(cclusters)))
+def train_mixture(clusters):
+    unique_clusters = np.unique(clusters)
+    num_slices = int(np.ceil(len(unique_clusters) / config.num_processes))
+    unique_clusters = np.array_split(unique_clusters, num_slices)
+    rt = RTPT('JS', 'FedEinsum', len(unique_clusters))
     rt.start()
-    sub_cluster_sizes = []
-    
-    for c in np.unique(cclusters):
-        cluster_idx = np.argwhere(cclusters == c).flatten()
-        print(f"Cluster-size={len(cluster_idx)}")
-        cluster_img_ids = [img_ids[i] for i in cluster_idx]
-        sub_cluster_sizes.append(len(cluster_img_ids))
-        subset = Subset(dataset, cluster_img_ids)
-        loader = DataLoader(subset, batch_size=config.batch_size)
-        einet = init_spn(device)
-        print([p.shape for p in einet.parameters()])
-        einet = train(einet, loader, config.num_epochs, device, './checkpoints/', save_model=False)
-        cluster_einets.append(einet)
-        rt.step()
-
-    weights = np.array(sub_cluster_sizes) / np.sum(sub_cluster_sizes)
-    mixture = EinetMixture.EinetMixture(weights, cluster_einets)
-    root_einets.append(mixture)
-
-    with open(f'./models/model_{cid}', 'wb') as f:
-        pickle.dump((root_einets, len(img_ids)), f)
-    
-    samples = mixture.sample(25)
-    samples = samples.reshape(-1, config.height, config.width, config.num_dims)
-    img_path = os.path.join('./', 'samples.png')
-    save_image_stack(samples, 5, 5, img_path, margin_gray_val=0., frame=2, frame_gray_val=0.0)
-
-clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch_10K.npy')
-encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
-
-transform = Compose([ToTensor(), Resize(112), CenterCrop(112)])
-imagenet = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
-
-root_einets = []
-cluster_sizes = []
-processes = []
-
-unique_clusters = [2400] #np.unique(clusters)
-num_slices = int(np.ceil(len(unique_clusters) / config.num_processes))
-unique_clusters = np.array_split(unique_clusters, num_slices)
-
-# train einets in parallel. Start num_slices processes in parallel, wait
-# until they finished and start next batch
-if __name__ == '__main__':
     for cluster_batch in unique_clusters:
         processes = []
         for i, rc in enumerate(cluster_batch):
-            device = i % config.num_processes
-            p = Process(target=train_mixture, args=(imagenet, clusters, encodings, rc, device))
+            device_id = i % config.num_processes
+            img_ids = np.argwhere(clusters == rc).flatten()
+
+            print(f"Cluster-size={len(img_ids)}")
+            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints/', rc))
             p.start()
             processes.append(p)
-        
+    
         for p in processes:
             p.join()
-    
+        rt.step()
+
+clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch.npy')
+encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
+# train einets in parallel. Start num_slices processes in parallel, wait
+# until they finished and start next batch
+if __name__ == '__main__':
+    train_mixture(clusters)
 
 
 #weights = np.array(cluster_sizes) / np.sum(cluster_sizes)

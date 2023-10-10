@@ -30,8 +30,8 @@ structure = 'poon-domingos'
 pd_num_pieces = [4]
 #pd_num_pieces = [7]
 #pd_num_pieces = [8, 32]
-width = 14
-height = 14
+width = 112
+height = 112
 num_vars = width*height
 num_dims = 3
 patch_size = (height, width)
@@ -41,8 +41,8 @@ depth = 2
 num_repetitions = 2
 
 num_epochs = 20
-batch_size = 10
-online_em_frequency = 2
+batch_size = 64
+online_em_frequency = 10
 online_em_stepsize = 0.5
 num_clients = 1
 
@@ -56,5 +56,5 @@ reuse_trained = False
 port = '12005'
 
 # Devices
-devices = [0, 1, 2, 3]
-num_processes = 4
+devices = [0, 1, 2, 3, 4, 5, 6, 7]
+num_processes = 8
