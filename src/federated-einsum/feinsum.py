@@ -107,11 +107,12 @@ def train_mixture(clusters):
     for cluster_batch in unique_clusters:
         processes = []
         for i, rc in enumerate(cluster_batch):
-            device_id = i % config.num_processes
+            idx = i % len(config.devices)
+            device_id = config.devices[idx]
             img_ids = np.argwhere(clusters == rc).flatten()
 
             print(f"Cluster-size={len(img_ids)}")
-            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints/', rc))
+            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints_2gpus_2procs/', rc))
             p.start()
             processes.append(p)
     

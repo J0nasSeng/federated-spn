@@ -56,5 +56,5 @@ reuse_trained = False
 port = '12005'
 
 # Devices
-devices = [0, 1, 2, 3, 4, 5, 6, 7]
-num_processes = 8
+devices = [2, 3]
+num_processes = 2

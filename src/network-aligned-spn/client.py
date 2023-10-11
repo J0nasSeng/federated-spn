@@ -132,7 +132,7 @@ class FlowNode:
                     ctxt = Context(meta_types=[context.ctxts[self.dataset][i] for i in subspace])
                     #ctxt = Context(parametric_types=types)
                     ctxt.add_domains(subset)
-                    spn = learn_mspn(subset, ctxt)
+                    spn = learn_mspn(subset, ctxt, min_instances_slice=100, threshold=0.4)
                     spn = utils.adjust_scope(spn, subspace)
                     cluster_spns.append(spn)
                 if self.setting == 'horizontal' or self.glueing == 'naive':
@@ -143,7 +143,7 @@ class FlowNode:
             else:
                 ctxt = Context(meta_types=[context.ctxts[self.dataset][i] for i in subspace])
                 ctxt.add_domains(train_data)
-                spn = learn_mspn(train_data, ctxt)
+                spn = learn_mspn(train_data, ctxt, min_instances_slice=50, threshold=0.4)
                 spn = utils.adjust_scope(spn, subspace)
                 self.spns[tuple(subspace)] = [spn]
             
