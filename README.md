@@ -1,5 +1,8 @@
-# Federated SPN (FedSPN)
-This repository contains the code of Federated Sum-Product Networks (FedSPN).
+# Federated Circuits (FCs)
+This repository contains the code of Federated Circuits and Federated Probabilistic Ciruits (FedPC).
+
+## Abstract
+Federated Learning (FL) trains machine learning models on distributed client data, eliminating the need for centralized data storage. It is typically categorized into horizontal (shared feature space, disjoint sample space), vertical (shared sample space, disjoint feature space), or hybrid FL (overlapping feature and sample spaces). However, existing methods only tackle individual FL scenarios separately and often suffer from a communication bottleneck, limiting real-world applicability. We propose Federated Circuits (FCs), a communication-efficient probabilistic approach that transforms FL into joint distribution learning by recursively partitioning client data to ensure invariance to data partitioning. We demonstrate FC's versatility in handling horizontal, vertical, and hybrid FL within a unified framework and that FCs efficiently scale Probabilistic Circuits (PCs) for large datasets like Imagenet.
 
 ## Getting Started
 The repository is divided into several sub-directories: `parameter-server-spn` implements the classical horizontal FL scenario with the server computing a mixture of client-SPNs (TODO: support vertical scenario). The `network-aligned-spn` sub-directory contains the more general case in which we align the SPN structure and the communication network structure in order to perform hybrid FL (and horizontal/vertical as special cases). 

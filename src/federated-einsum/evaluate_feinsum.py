@@ -20,7 +20,7 @@ def eval_einsum(model_dir, model_id, dataset_dir, device_id):
     model_file = f'chk_{model_id}.pt'
     device = torch.device(f'cuda:{device_id}')
     einet = torch.load(model_dir + model_file).to(device)
-    einet_ll = 0.0
+    einet_lls = []
     for i, (x, y) in enumerate(loader):
         if i % 50 == 0:
             print(f"{(i / len(loader) * 100):3f}%")
@@ -28,11 +28,12 @@ def eval_einsum(model_dir, model_id, dataset_dir, device_id):
         x = x.permute((0, 2, 3, 1))
         x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
         ll_sample = einet.forward(x)
-        log_likelihood = ll_sample.sum()
-        einet_ll += log_likelihood / (len(loader) * loader.batch_size)
-    einet_ll = einet_ll.numpy()
-    file = f'{model_dir}_eval_{model_id}'
-    np.savetxt(file, einet_ll)
+        einet_lls.append(ll_sample)
+        print(ll_sample.shape)
+    
+    #einet_ll = einet_ll.numpy()
+    #file = f'{model_dir}_eval_{model_id}'
+    #np.savetxt(file, einet_ll)
 
 
 parser = argparse.ArgumentParser()
