@@ -11,9 +11,11 @@ import ray
 import numpy as np
 from client import FlowNode, EinetNode
 from datasets.utils import get_horizontal_train_data, get_test_data, get_vertical_train_data, get_hybrid_train_data, make_data_loader
-from spn.structure.Base import Sum, Product
+from spn.structure.Base import Sum, Product, get_nodes_by_type
 from spn.algorithms.MPE import mpe
 from spn.algorithms.Inference import log_likelihood
+from spn.algorithms.EM import EM_optimization
+from scipy.special import softmax
 from optim import add_node_em_update, cond_sum_em_update, EM_optimization_network
 from rtpt import RTPT
 import logging
@@ -336,7 +338,18 @@ def main_spflow(args):
         else:
             train_data = np.column_stack(train_data)
         add_node_em_update(Sum, cond_sum_em_update(allowed_nodes_for_update))
-        EM_optimization_network(na_spn, train_data)
+
+        if args.algo == '2step':
+            EM_optimization_network(na_spn, train_data)
+        
+        # simulate FedEM training
+        elif args.algo == 'e2e':
+            for node in get_nodes_by_type(na_spn, Sum):
+                w_shape = len(node.weights)
+                node.weights = np.random.uniform(0, 1, w_shape)
+                node.weights = softmax(node.weights)
+
+            EM_optimization(na_spn, train_data)
 
 
     # get accuracy
@@ -431,6 +444,7 @@ def main(args):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--setting', default='horizontal')
+parser.add_argument('--algo', default='2step')
 parser.add_argument('--num-clients', type=int, default=5)
 parser.add_argument('--dataset', default='income')
 parser.add_argument('--task', default='classification')

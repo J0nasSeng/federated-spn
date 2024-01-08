@@ -112,7 +112,7 @@ def train_mixture(clusters):
             img_ids = np.argwhere(clusters == rc).flatten()
 
             print(f"Cluster-size={len(img_ids)}")
-            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints_4gpus_4procs_v1/', rc))
+            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints_2gpus_2procs/', rc))
             p.start()
             processes.append(p)
     
