@@ -57,18 +57,19 @@ def init_spn(device):
     einet.to(device)
     return einet
 
-def train(img_ids, num_epochs, device_id, chk_path, cluster_count):
+def train(num_epochs, device_id, chk_path, cluster_count):
 
     """
     Training loop to train the SPN. Follows EM-procedure.
     """
+    rt = RTPT('JS', 'FedEinsum', num_epochs)
+    rt.start()
     logging.info('Starting Training...')
     log_likelihoods = []
     device = torch.device(f'cuda:{device_id}')
     transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
     imagenet = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
-    subset = Subset(imagenet, img_ids)
-    loader = DataLoader(subset, batch_size=config.batch_size, num_workers=2)
+    loader = DataLoader(imagenet, batch_size=config.batch_size, num_workers=2)
     einet = init_spn(device)
     for epoch_count in range(num_epochs):
         einet.train()
@@ -86,46 +87,25 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count):
             einet.em_process_batch()
             total_ll += log_likelihood.detach().item()
 
-            #if i % 20 == 0:
-                #logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
+            if i % 20 == 0:
+                logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
         total_ll = total_ll / (len(loader) * loader.batch_size)
         log_likelihoods.append(total_ll)
         logging.info('Epoch {:03d} \t LL={:03f}'.format(epoch_count, total_ll))
 
         einet.em_update()
+        rt.step()
     torch.save(einet, os.path.join(chk_path, f'chk_{cluster_count}.pt'))
     df = pd.DataFrame(data=log_likelihoods, columns=['lls'])
     df.to_csv(os.path.join(chk_path, f'chk_{cluster_count}.csv'))
     return einet
-
-def train_mixture(clusters):
-    unique_clusters = np.unique(clusters)
-    num_slices = int(np.ceil(len(unique_clusters) / config.num_processes))
-    unique_clusters = np.array_split(unique_clusters, num_slices)
-    rt = RTPT('JS', 'FedEinsum', len(unique_clusters))
-    rt.start()
-    for cluster_batch in unique_clusters:
-        processes = []
-        for i, rc in enumerate(cluster_batch):
-            idx = i % len(config.devices)
-            device_id = config.devices[idx]
-            img_ids = np.argwhere(clusters == rc).flatten()
-
-            print(f"Cluster-size={len(img_ids)}")
-            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints_4gpus_4procs_v1/', rc))
-            p.start()
-            processes.append(p)
-    
-        for p in processes:
-            p.join()
-        rt.step()
 
 clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch.npy')
 encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
 # train einets in parallel. Start num_slices processes in parallel, wait
 # until they finished and start next batch
 if __name__ == '__main__':
-    train_mixture(clusters)
+    train(config.num_epochs, config.devices[0], './checkpoints_4gpus_8procs_v1/', 0)
 
 
 #weights = np.array(cluster_sizes) / np.sum(cluster_sizes)
