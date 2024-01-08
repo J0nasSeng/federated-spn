@@ -21,7 +21,7 @@ classes = [7]
 # classes = [2, 3, 5, 7]
 # classes = None
 
-K = 10
+K = 30
 
 structure = 'poon-domingos'
 #structure = 'binary-trees'
@@ -38,7 +38,7 @@ patch_size = (height, width)
 
 # 'binary-trees'
 depth = 2
-num_repetitions = 2
+num_repetitions = 6
 
 num_epochs = 20
 batch_size = 64
