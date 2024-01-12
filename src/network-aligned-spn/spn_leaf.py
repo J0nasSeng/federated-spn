@@ -4,6 +4,21 @@ from spn.algorithms.Inference import add_node_likelihood
 import numpy as  np
 import torch
 
+class DensityLeaf(Leaf):
+
+    def __init__(self, model, scope=None):
+        super().__init__(scope)
+
+    @property
+    def type(self):
+        return Type.REAL
+    
+def forward_ll(node, data=None, **kwargs):
+    ll = node.model.predict(data[:, node.scope])
+    return np.exp(ll)
+
+add_node_likelihood(DensityLeaf, lambda_func=forward_ll)
+
 class SPNLeaf(Leaf):
 
     def __init__(self, scope=None):
