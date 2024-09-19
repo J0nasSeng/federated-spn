@@ -30,6 +30,7 @@ import torch
 import torch.nn as nn
 import pandas as pd
 import os
+import context as ctxt
 warnings.filterwarnings('ignore')
 
 log_format = '%(asctime)s %(message)s'
@@ -255,7 +256,7 @@ class RandomForestServer:
 
 class DenistyTreeServer:
 
-    def train(self, train_data, feature_spaces, args, **kwargs):
+    def train(self, train_data, feature_spaces, feature_types, args, **kwargs):
         """
             This function starts a local ray cluster, splits data into equal sized
             subsets and trains one client/worker on each subset.
@@ -268,11 +269,14 @@ class DenistyTreeServer:
         self.args = args
         for c in range(args.num_clients):
             logging.info(f'Train node {c}')
-            node = DensityTreeNode.remote(args.dataset, kwargs['feature_types'])
+            node = DensityTreeNode.remote(args.dataset)
             nodes.append(node)
             train_subset = train_data[c]
             subspace = feature_spaces[c]
-            assign_jobs.append(node.assign_subset.remote((subspace, train_subset)))
+            fts = feature_types[c]
+            assign_jobs.append(node.assign_subset.remote(train_subset))
+            assign_jobs.append(node.assign_feature_spaces.remote(subspace))
+            assign_jobs.append(node.assign_feature_types.remote(fts))
         ray.get(assign_jobs)
         
         rtpt.step()
@@ -285,9 +289,6 @@ class DenistyTreeServer:
 
         return nodes
     
-    def build_fc(self, nodes):
-        if self.args.setting == 'horizontal':
-            self.build_fc_horizontal(nodes)
 
     def build_fc_horizontal(self, nodes):
         """
@@ -301,7 +302,7 @@ class DenistyTreeServer:
         norm = sum(ds_len)
         weights = [d / norm for d in ds_len]
         leafs = [DensityLeaf(l) for l in leafs] # wrap density tree in SPN leaf
-        spn = Sum(weights, leafs)
+        spn = Sum(weights, leafs) 
         spn.scope = []
         for c in spn.children:
             spn.scope = list(set(spn.scope).union(set(c.scope)))
@@ -407,6 +408,19 @@ class DenistyTreeServer:
                 spn, added_nodes = self.build_fc_verhyb_combinatorial(feature_subspaces, nodes)
             return spn, added_nodes
 
+    def classify(self, model, test_data):
+        labels = test_data[:, -1]
+        tmp_lls = []
+        u_labels = np.unique(labels)
+        for l in u_labels:
+            test_data[:, -1] = l
+            lls = log_likelihood(model, test_data).flatten()
+            tmp_lls.append(lls)
+        tmp_lls = np.column_stack(tmp_lls)
+        argmax = np.argmax(tmp_lls, axis=1).flatten()
+        pred = np.array([u_labels[m] for m in argmax])
+        return pred
+
 # TODO: add NF implementation
 
 class EinsumServer:
@@ -511,6 +525,65 @@ class EinsumServer:
             f1_macros.append(f1_macro)
 
         return np.mean(accs), np.mean(f1_micros), np.mean(f1_macros)
+    
+def main_ddt(args):
+    server = DenistyTreeServer()
+
+    if args.setting == 'horizontal':
+        train_data = get_horizontal_train_data(args.dataset, args.num_clients, 
+                                               args.sample_partitioning, args.dir_alpha)
+        feature_spaces = [[list(range(train_data[0].shape[1]))] for _ in range(args.num_clients)]
+        feature_types = [[[ctxt.feature_types[args.dataset][f] for f in feature_spaces[0][0]]] for _ in range(args.num_clients)]
+        nodes = server.train(train_data, feature_spaces, feature_types, args)
+    elif args.setting == 'vertical':
+        train_data, feature_spaces, labels = get_vertical_train_data(args.dataset, args.num_clients, return_labels=True)
+        train_data = [np.hstack([td, labels.reshape(-1, 1)]) for td in train_data]
+        feature_types = []
+        for fs in feature_spaces:
+            fts = [ctxt.feature_types[args.dataset][f] for f in fs]
+            feature_types.append(fts)
+        nodes = server.train(train_data, feature_spaces, feature_types, args)
+    elif args.setting == 'hybrid':
+        sample_frac = None if args.sample_frac == -1 else args.sample_frac
+        train_data, feature_spaces, client_idx, labels = get_hybrid_train_data(args.dataset, args.num_clients, args.overlap_frac_hybrid, sample_frac, return_labels=True)
+        final_train_data = []
+        feature_types = []
+        for i, (cidx, _) in enumerate(client_idx):
+            td = train_data[i]
+            client_labels = labels[cidx]
+            final_train_data.append(np.hstack([td, client_labels.reshape(-1, 1)]))
+            fs = feature_spaces[i]
+            client_fts = []
+            for s in fs:
+                ft = [ctxt.feature_types[args.dataset][f] for f in s]
+                client_fts.append(ft)
+            feature_types.append(client_fts)
+        nodes = server.train(final_train_data, feature_spaces, feature_types, args)
+
+    # build fc
+    grouped_feature_spaces = utils.group_clients_by_subspace(feature_spaces)
+    model, added_nodes = server.build_fc(grouped_feature_spaces, nodes, args)
+
+    # get accuracy
+    test_data = get_test_data(args.dataset)
+    # compute log-likelihood
+    ll = np.mean(log_likelihood(model, test_data))
+    # set last label column to nan for MPE
+    labels = np.copy(test_data[:, -1])
+    pred = server.classify(model, test_data)
+    print(labels)
+    print(pred)
+    print(np.unique(pred))
+    acc = accuracy_score(labels.flatten(), pred)
+    f1_micro = f1_score(labels.flatten(), pred, average='micro')
+    f1_macro = f1_score(labels.flatten(), pred, average='macro')
+    rtpt.step()
+
+    # shut down ray cluster
+    ray.shutdown()
+
+    return acc, f1_micro, f1_macro, ll
+
 
 def main_rf(args):
     server = RandomForestServer()
@@ -683,8 +756,10 @@ def main(args):
             acc, f1_micro, f1_macro, ll = main_spflow(args)
         elif args.model == 'rf':
             acc, f1_micro, f1_macro, ll = main_rf(args)
-        elif args.model == 'einsum':
-            acc, f1_micro, f1_macro = main_einsum(args)
+        #elif args.model == 'einsum':
+        #    acc, f1_micro, f1_macro = main_einsum(args)
+        elif args.model == 'ddt':
+            acc, f1_micro, f1_macro, ll = main_ddt(args)
         else:
             raise ValueError("Implementation must be 'spflow' or 'einsum'")
         table_dict['architecture'].append(args.structure)

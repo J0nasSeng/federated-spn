@@ -113,7 +113,7 @@ def get_vertical_train_data(ds, num_clients, rand_perm=True, return_labels=False
     
 def split_dataset_hybrid(data, num_clients, num_cols, overlap_frac, sample_frac, seed):
     sample_frac = 1/num_clients if sample_frac is None else sample_frac
-    np.random.seed(seed)
+    #np.random.seed(seed)
     cols_per_client = int(num_cols / num_clients)
     client_to_col = []
     for client_id in range(num_clients):

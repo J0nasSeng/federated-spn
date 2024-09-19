@@ -180,45 +180,45 @@ class NormalizingFlowNode:
 @ray.remote
 class DensityTreeNode:
 
-    def __init__(self, dataset, feature_types, num_clusters=2, max_depth=4) -> None:
+    def __init__(self, dataset, num_clusters=2, max_depth=4) -> None:
         self.dataset = dataset
-        self.feature_types = feature_types
         self.models = {}
         self.subspaces = []
         self.num_clusters = num_clusters
         self.max_depth = max_depth
+        self.data: np.ndarray
+        self.feature_types = []
     
     def train(self):
-        for subspace, data in self.subspaces:
+        for subspace, feature_types in zip(self.subspaces, self.feature_types):
             if self.num_clusters == 1:
-                model = self.train_single(subspace, data)
+                model = self.train_single(subspace, feature_types)
             else:
-                model = self.train_cluster(subspace, data)
+                model = self.train_cluster(subspace, feature_types)
             self.models[tuple(subspace)] = model
 
 
-    def train_single(self, subspace, train_data):
-        fts = [f for i, f in enumerate(self.feature_types) if i in subspace]
-        model = DensityTree(4, fts)
-        model.train(train_data)
+    def train_single(self, subspace, fts):
+        model = DensityTree(8, fts, min_leaf_instances=10, leaf_type='hist', 
+                            num_bins=2, scope=subspace)
+        model.train(self.data[:, subspace])
         return [model]
 
-    def train_cluster(self, subspace, train_data):
-        fts = [f for i, f in enumerate(self.feature_types) if i in subspace]
+    def train_cluster(self, subspace, fts):
         kmeans = KMeans(self.num_clusters)
-        clusters = kmeans.fit_predict(train_data)
+        clusters = kmeans.fit_predict(self.data[:, subspace]).flatten()
         models = []
         for c in np.unique(clusters):
             idx = np.argwhere(clusters == c).flatten()
-            subset = train_data[idx]
-            tree = DensityTree(4, fts)
-            tree.train(subset)
+            subset = self.data[idx]
+            tree = DensityTree(8, fts, min_leaf_instances=10, leaf_type='hist', 
+                               num_bins=3, scope=subspace)
+            tree.train(subset[:, subspace])
             models.append(tree)
         return models
         
     def get_dataset_len(self):
-        len_data = sum(len(data) for _, data in self.subspaces)
-        return len_data
+        return len(self.data)
     
     def get_model(self, subspace):
         return self.models[subspace]
@@ -226,8 +226,14 @@ class DensityTreeNode:
     def get_models(self):
         return self.models
     
-    def assign_subset(self, subspace_with_data):
-        self.subspaces.append(subspace_with_data)
+    def assign_subset(self, data):
+        self.data = data
+
+    def assign_feature_spaces(self, feature_spaces):
+        self.subspaces = feature_spaces
+
+    def assign_feature_types(self, feature_types):
+        self.feature_types = feature_types
 
 @ray.remote
 class RandomForestNode:

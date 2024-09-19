@@ -8,14 +8,20 @@ class DensityLeaf(Leaf):
 
     def __init__(self, model, scope=None):
         super().__init__(scope)
+        self.model = model
+        self.scope = model.scope
 
     @property
     def type(self):
         return Type.REAL
     
 def forward_ll(node, data=None, **kwargs):
-    ll = node.model.predict(data[:, node.scope])
-    return np.exp(ll)
+    lls = []
+    for x in data[:, node.scope]:
+        l = node.model.predict(x)
+        lls.append(l)
+    lls = np.array(lls)
+    return lls.reshape(-1, 1)
 
 add_node_likelihood(DensityLeaf, lambda_func=forward_ll)
 
