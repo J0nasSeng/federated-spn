@@ -4,7 +4,7 @@
 """
 import ray
 #from einet.einet import Einet, EinetConfig
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from rtpt import RTPT
 import torch
 from spn.algorithms.LearningWrappers import learn_mspn
@@ -15,8 +15,13 @@ import utils
 from einet.einet import Einet, EinetConfig
 from einet.distributions.normal import RatNormal
 from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestClassifier
 import numpy as np
 from spn.algorithms.Inference import log_likelihood
+import normflows as nf
+import torchvision as tv
+from torchvision.transforms.functional import crop
+from det.tree import DensityTree
 
 n_gpus = 1 if torch.cuda.is_available() else 0
 @ray.remote(num_gpus=n_gpus)
@@ -83,6 +88,183 @@ class EinetNode:
     
     def get_spns(self):
         return self.einets
+
+@ray.remote
+class NormalizingFlowNode:
+
+    def __init__(self, setting, device) -> None:
+        self.setting = setting
+        self.device = device
+        self.subspace = None
+
+    def _create_flow(self):
+        # Define flows
+        L = 3
+        K = 16
+        torch.manual_seed(0)
+
+        # TODO: adapt according to client's feature space
+        input_shape = (3, 32, 32)
+        channels = 3
+        hidden_channels = 256
+        split_mode = 'channel'
+        scale = True
+        num_classes = 10
+
+        # Set up flows, distributions and merge operations
+        q0 = []
+        merges = []
+        flows = []
+        for i in range(L):
+            flows_ = []
+            for j in range(K):
+                flows_ += [nf.flows.GlowBlock(channels * 2 ** (L + 1 - i), hidden_channels,
+                                            split_mode=split_mode, scale=scale)]
+            flows_ += [nf.flows.Squeeze()]
+            flows += [flows_]
+            if i > 0:
+                merges += [nf.flows.Merge()]
+                latent_shape = (input_shape[0] * 2 ** (L - i), input_shape[1] // 2 ** (L - i), 
+                                input_shape[2] // 2 ** (L - i))
+            else:
+                latent_shape = (input_shape[0] * 2 ** (L + 1), input_shape[1] // 2 ** L, 
+                                input_shape[2] // 2 ** L)
+            q0 += [nf.distributions.ClassCondDiagGaussian(latent_shape, num_classes)]
+
+
+        # Construct flow model with the multiscale architecture
+        self.model = nf.MultiscaleFlow(q0, flows, merges).to(self.device)
+
+    def train(self):
+        assert self.subspace is not None, 'subspace must be set before training'
+        sample_idx, x_subspace, y_subspace = self.subspace
+        x1, x2 = x_subspace
+        y1, y2 = y_subspace
+        batch_size = 128
+
+        transform = tv.transforms.Compose([tv.transforms.ToTensor(), nf.utils.Scale(255. / 256.), nf.utils.Jitter(1 / 256.)])
+        train_data = tv.datasets.ImageNet('datasets/', train=True,
+                                        download=False, transform=transform)
+        train_data = Subset(train_data, sample_idx)
+        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True,
+                                                drop_last=True)
+
+        train_iter = iter(train_loader)
+
+        max_iter = 20000
+
+        loss_hist = np.array([])
+
+        optimizer = torch.optim.Adamax(self.model.parameters(), lr=1e-3, weight_decay=1e-5)
+
+        for i in range(max_iter):
+            # TODO: cut data s.t. model only learns on feature subspace of client
+            try:
+                x, y = next(train_iter)
+            except StopIteration:
+                train_iter = iter(train_loader)
+                x, y = next(train_iter)
+            optimizer.zero_grad()
+            if x1 is not None:
+                x = crop(x, x1, y1, x2-x1, y2-y1)
+            loss = self.model.forward_kld(x.to(self.device), y.to(self.device))
+                
+            if ~(torch.isnan(loss) | torch.isinf(loss)):
+                loss.backward()
+                optimizer.step()
+
+            loss_hist = np.append(loss_hist, loss.detach().to('cpu').numpy())
+
+    def assign_subset(self, subspace):
+        self.subspace = subspace
+
+@ray.remote
+class DensityTreeNode:
+
+    def __init__(self, dataset, num_clusters=2, max_depth=4) -> None:
+        self.dataset = dataset
+        self.models = {}
+        self.subspaces = []
+        self.num_clusters = num_clusters
+        self.max_depth = max_depth
+        self.data: np.ndarray
+        self.feature_types = []
+    
+    def train(self):
+        for subspace, feature_types in zip(self.subspaces, self.feature_types):
+            if self.num_clusters == 1:
+                model = self.train_single(subspace, feature_types)
+            else:
+                model = self.train_cluster(subspace, feature_types)
+            self.models[tuple(subspace)] = model
+
+
+    def train_single(self, subspace, fts):
+        model = DensityTree(8, fts, min_leaf_instances=10, leaf_type='hist', 
+                            num_bins=2, scope=subspace)
+        model.train(self.data[:, subspace])
+        return [model]
+
+    def train_cluster(self, subspace, fts):
+        kmeans = KMeans(self.num_clusters)
+        clusters = kmeans.fit_predict(self.data[:, subspace]).flatten()
+        models = []
+        for c in np.unique(clusters):
+            idx = np.argwhere(clusters == c).flatten()
+            subset = self.data[idx]
+            tree = DensityTree(8, fts, min_leaf_instances=10, leaf_type='hist', 
+                               num_bins=3, scope=subspace)
+            tree.train(subset[:, subspace])
+            models.append(tree)
+        return models
+        
+    def get_dataset_len(self):
+        return len(self.data)
+    
+    def get_model(self, subspace):
+        return self.models[subspace]
+    
+    def get_models(self):
+        return self.models
+    
+    def assign_subset(self, data):
+        self.data = data
+
+    def assign_feature_spaces(self, feature_spaces):
+        self.subspaces = feature_spaces
+
+    def assign_feature_types(self, feature_types):
+        self.feature_types = feature_types
+
+@ray.remote
+class RandomForestNode:
+
+    def __init__(self, dataset) -> None:
+        self.dataset = dataset
+        self.subspace = []
+        self.model = None
+
+    def train(self):
+        self.model = RandomForestClassifier(100)
+        _, train_data = self.subspace
+        X, y = train_data[:, :-1], train_data[:, -1]
+        self.model.fit(X, y)
+
+
+    def get_feature_ids(self):
+        """
+            Retrieve feature ids hold by the client
+        """
+        return self.subspace[0]
+
+    def get_dataset_len(self):
+        return len(self.subspace[1])
+    
+    def get_forest(self):
+        return self.model
+    
+    def assign_subset(self, subspace_with_data):
+        self.subspace = subspace_with_data
 
 @ray.remote
 class FlowNode:

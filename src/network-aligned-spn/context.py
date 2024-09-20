@@ -31,3 +31,34 @@ ctxts['credit'][2] = MetaType.DISCRETE
 ctxts['credit'][3] = MetaType.REAL
 ctxts['credit'][4] = MetaType.REAL
 ctxts['breast-cancer'][30] = MetaType.BINARY
+
+feature_types = {
+    'income': {
+        i: 'cont' for i in range(14)
+    },
+    'mnist': {
+        i: 'cont' for i in range(28*28)
+    },
+    'avazu': {
+        i: 'cont' for i in range(1, 26)
+    },
+    'credit': {
+        i: 'ord' for i in range(5, 9)
+    },
+    'breast-cancer': {
+        i: 'cont' for i in range(30)
+    }
+}
+
+feature_types['income'][14] = 'cat'
+feature_types['income'][15] = 'cat'
+feature_types['mnist'][(28*28)] = 'ord'
+feature_types['avazu'][0] = 'cat'
+feature_types['credit'][9] = 'cont'
+feature_types['credit'][10] = 'cat'
+feature_types['credit'][0] = 'cont'
+feature_types['credit'][1] = 'ord'
+feature_types['credit'][2] = 'ord'
+feature_types['credit'][3] = 'cont'
+feature_types['credit'][4] = 'cont'
+feature_types['breast-cancer'][30] = 'cat'

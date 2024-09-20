@@ -50,7 +50,7 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
         partitioned_data.append(data[idx])
     return partitioned_data
 
-def get_vertical_train_data(ds, num_clients, rand_perm=True):
+def get_vertical_train_data(ds, num_clients, rand_perm=True, return_labels=False):
     
     if ds in ['income', 'breast-cancer', 'credit']:
         if ds == 'income':
@@ -61,7 +61,10 @@ def get_vertical_train_data(ds, num_clients, rand_perm=True):
             dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='train')
         features = dataset.features.numpy()
         targets = dataset.targets.numpy()
-        data = np.hstack([features, targets.reshape(-1, 1)])
+        if not return_labels:
+            data = np.hstack([features, targets.reshape(-1, 1)])
+        else:
+            data = features
         columns = data.shape[1]
         cols = np.arange(columns)
         if rand_perm:
@@ -69,7 +72,10 @@ def get_vertical_train_data(ds, num_clients, rand_perm=True):
         split_cols = np.array_split(cols, num_clients)
         split_cols = [list(s) for s in split_cols]
         client_data = [data[:, s] for s in split_cols]
-        return client_data, split_cols
+        if not return_labels:
+            return client_data, split_cols
+        else:
+            return client_data, split_cols, targets
 
     elif ds == 'mnist':
         columns = (28*28) + 1
@@ -107,7 +113,7 @@ def get_vertical_train_data(ds, num_clients, rand_perm=True):
     
 def split_dataset_hybrid(data, num_clients, num_cols, overlap_frac, sample_frac, seed):
     sample_frac = 1/num_clients if sample_frac is None else sample_frac
-    np.random.seed(seed)
+    #np.random.seed(seed)
     cols_per_client = int(num_cols / num_clients)
     client_to_col = []
     for client_id in range(num_clients):
@@ -143,7 +149,7 @@ def split_dataset_hybrid(data, num_clients, num_cols, overlap_frac, sample_frac,
     return client_data, client_cols, client_indices
     
 def get_hybrid_train_data(ds, num_clients, overlap_frac=0.3,
-                          sample_frac=None, seed=111):
+                          sample_frac=None, seed=111, return_labels=False):
     if ds in ['income', 'breast-cancer', 'credit']:
         if ds == 'income':
             dataset = Income('../../datasets/income/', split='train')
@@ -153,10 +159,16 @@ def get_hybrid_train_data(ds, num_clients, overlap_frac=0.3,
             dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='train')
         features = dataset.features.numpy()
         targets = dataset.targets.numpy()
-        data = np.hstack([features, targets.reshape(-1, 1)])
+        if not return_labels:
+            data = np.hstack([features, targets.reshape(-1, 1)])
+        else:
+            data = features
         client_data, subspaces, client_idx = split_dataset_hybrid(data, num_clients, data.shape[1], 
                                                       overlap_frac, sample_frac, seed)
-        return client_data, subspaces, client_idx
+        if not return_labels:
+            return client_data, subspaces, client_idx
+        else:
+            return client_data, subspaces, client_idx, targets
 
     elif ds == 'mnist':
         columns = (28*28) + 1
