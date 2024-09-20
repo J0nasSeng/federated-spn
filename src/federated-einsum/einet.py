@@ -1,5 +1,5 @@
 import numpy as np
-from torchvision.datasets import ImageNet
+from torchvision.datasets import ImageNet, SVHN
 from torchvision.transforms import Compose, CenterCrop, Resize, ToTensor
 from torch.utils.data import Subset, DataLoader
 from einsum import EinsumNetwork, Graph, EinetMixture
@@ -30,7 +30,7 @@ def init_spn(device):
         until we operate on pixel-level. The spplitting is done randomly. For more information
         refer to the link above.
     """
-
+    logging.info("Init Einsum...")
     if config.structure == 'poon-domingos':
         pd_delta = [[config.height / d, config.width / d] for d in config.pd_num_pieces]
         graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=pd_delta)
@@ -67,9 +67,12 @@ def train(num_epochs, device_id, chk_path, cluster_count):
     logging.info('Starting Training...')
     log_likelihoods = []
     device = torch.device(f'cuda:{device_id}')
-    transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
-    imagenet = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
-    loader = DataLoader(imagenet, batch_size=config.batch_size, num_workers=2)
+    # reserve GPU
+    tensor = torch.randn(3).to(device)
+    transform = Compose([ToTensor(), Resize(config.height, antialias=True), CenterCrop(config.height)])
+    #dataset = SVHN('../datasets/', transform=transform, download=True)
+    dataset = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
+    loader = DataLoader(dataset, batch_size=config.batch_size, num_workers=2)
     einet = init_spn(device)
     for epoch_count in range(num_epochs):
         einet.train()
@@ -85,11 +88,11 @@ def train(num_epochs, device_id, chk_path, cluster_count):
             log_likelihood.backward()
 
             einet.em_process_batch()
-            total_ll += log_likelihood.detach().item()
+            total_ll += log_likelihood.detach().item() / (len(loader) * loader.batch_size)
 
             if i % 20 == 0:
                 logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
-        total_ll = total_ll / (len(loader) * loader.batch_size)
+        #total_ll = total_ll / (len(loader) * loader.batch_size)
         log_likelihoods.append(total_ll)
         logging.info('Epoch {:03d} \t LL={:03f}'.format(epoch_count, total_ll))
 
@@ -100,12 +103,8 @@ def train(num_epochs, device_id, chk_path, cluster_count):
     df.to_csv(os.path.join(chk_path, f'chk_{cluster_count}.csv'))
     return einet
 
-clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch.npy')
-encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
-# train einets in parallel. Start num_slices processes in parallel, wait
-# until they finished and start next batch
 if __name__ == '__main__':
-    train(config.num_epochs, config.devices[0], './checkpoints_4gpus_8procs_v1/', 0)
+    train(config.num_epochs, config.devices[0], './checkpoints_1gpus_1procs_v1/', 0)
 
 
 #weights = np.array(cluster_sizes) / np.sum(cluster_sizes)

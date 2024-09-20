@@ -112,7 +112,7 @@ def train_mixture(clusters):
             img_ids = np.argwhere(clusters == rc).flatten()
 
             print(f"Cluster-size={len(img_ids)}")
-            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints_2gpus_2procs/', rc))
+            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints_4gpus_16procs/', rc))
             p.start()
             processes.append(p)
     
@@ -120,8 +120,8 @@ def train_mixture(clusters):
             p.join()
         rt.step()
 
-clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch.npy')
-encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
+clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch_16_centers.npy')
+# encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
 # train einets in parallel. Start num_slices processes in parallel, wait
 # until they finished and start next batch
 if __name__ == '__main__':

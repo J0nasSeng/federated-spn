@@ -70,6 +70,7 @@ class EinetNode:
         """
             Retrieve feature ids hold by the client
         """
+        pass
 
     def get_dataset_len(self):
         data_len = 0
@@ -215,6 +216,7 @@ class FlowNode:
         """
             Retrieve feature ids hold by the client
         """
+        pass
 
     def get_dataset_len(self):
         len_data = sum(len(data) for _, data in self.subspaces)

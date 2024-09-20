@@ -15,21 +15,21 @@ if exponential_family == EinsumNetwork.BinomialArray:
 if exponential_family == EinsumNetwork.CategoricalArray:
     exponential_family_args = {'K': 256}
 if exponential_family == EinsumNetwork.NormalArray:
-    exponential_family_args = {'min_var': 1e-7, 'max_var': 0.001}
+    exponential_family_args = {'min_var': 1e-6, 'max_var': 0.01}
 
 classes = [7]
 # classes = [2, 3, 5, 7]
 # classes = None
 
-K = 30
+K = 120
 
 structure = 'poon-domingos'
 #structure = 'binary-trees'
 
 # 'poon-domingos'
-pd_num_pieces = [4]
-#pd_num_pieces = [7]
-#pd_num_pieces = [8, 32]
+#pd_num_pieces = [4]
+#pd_num_pieces = [8]
+pd_num_pieces = [5, 5]
 width = 112
 height = 112
 num_vars = width*height
@@ -40,9 +40,9 @@ patch_size = (height, width)
 depth = 2
 num_repetitions = 6
 
-num_epochs = 20
-batch_size = 64
-online_em_frequency = 10
+num_epochs = 3
+batch_size = 32
+online_em_frequency = 20
 online_em_stepsize = 0.5
 num_clients = 1
 
@@ -56,5 +56,5 @@ reuse_trained = False
 port = '12005'
 
 # Devices
-devices = [0, 1, 2, 3]
+devices = [3, 6, 8, 9]
 num_processes = 4
