@@ -265,3 +265,16 @@ def infer_node_type(data, uniqe_limit=100):
             params = {'mean': 0, 'stdev': 1}
             types.append((Gaussian, params))
     return types
+
+def log_likelihoods(outputs, targets=None):
+    """Compute the likelihood of an Einet."""
+    if targets is None:
+        num_roots = outputs.shape[-1]
+        if num_roots == 1:
+            lls = outputs
+        else:
+            num_roots = torch.tensor(float(num_roots), device=outputs.device)
+            lls = torch.logsumexp(outputs - torch.log(num_roots), -1)
+    else:
+        lls = outputs.gather(-1, targets.unsqueeze(-1))
+    return lls

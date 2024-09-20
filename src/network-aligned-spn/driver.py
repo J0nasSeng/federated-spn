@@ -634,6 +634,7 @@ def main_spflow(args):
     if args.setting == 'horizontal':
         train_data = get_horizontal_train_data(args.dataset, args.num_clients, 
                                                args.sample_partitioning, args.dir_alpha)
+        test_data = get_test_data(args.dataset)
         feature_spaces = [list(range(train_data[0].shape[1])) for _ in range(args.num_clients)]
         nodes = server.train(train_data, feature_spaces, args)
     elif args.setting == 'vertical':

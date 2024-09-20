@@ -1,26 +1,21 @@
 from .datasets import TabularDataset
 import numpy as np
-from datasets.datasets import Avazu, Income, BreastCancer, GimmeCredit
+from datasets.datasets import DatasetFactory
+from datasets.partitioners import PartitionerFactory
 from torchvision.datasets import MNIST
 import torchvision
 from torch.utils.data import TensorDataset, DataLoader
 import torch
-from fedlab.utils.dataset import BasicPartitioner, MNISTPartitioner
+from fedlab.utils.dataset import MNISTPartitioner
 
 def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2):
-    if ds in ['income', 'breast-cancer', 'credit']:
-        if ds == 'income':
-            dataset = Income('../../datasets/income/', split='train')
-            partitioner = IncomePartitioner(dataset.targets, num_clients, 
-                                        partition=partitioning, dir_alpha=dir_alpha)
-        elif ds == 'breast-cancer':
-            dataset = BreastCancer('../../datasets/breast-cancer/', split='train')
-            partitioner = BreasCancerPartitioner(dataset.targets, num_clients,
-                                                 partition=partitioning, dir_alpha=dir_alpha)
-        elif ds == 'credit':
-            dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='train')
-            partitioner = GimmeCreditPartitioner(dataset.targets, num_clients,
-                                                 partition=partitioning, dir_alpha=dir_alpha)
+    if ds in ['income', 'breast-cancer', 'credit', 'baf']:
+        dataset_factory = DatasetFactory()
+        dataset = dataset_factory.load_dataset(ds)
+        dataset.set_split('train')
+        partitioner_factory = PartitionerFactory()
+        Partitioner_cls = partitioner_factory.get_partitioner_cls(dataset)
+        partitioner = Partitioner_cls(dataset.targets, num_clients, partition=partitioning, dir_alpha=dir_alpha)
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))
@@ -37,13 +32,6 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
         imgs /= 255.
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets)).astype(np.float64)
-    elif ds == 'avazu':
-        dataset = Avazu('../../datasets/avazu/', split='train')
-        partitioner = AvazuPartitioner(dataset.targets, num_clients, 
-                                       partition=partitioning, dir_alpha=dir_alpha)
-        np_features = dataset.features.numpy()
-        np_targets = dataset.targets.numpy()
-        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
 
     partitioned_data = []
     for _, idx in partitioner.client_dict.items():
@@ -53,12 +41,10 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
 def get_vertical_train_data(ds, num_clients, rand_perm=True, return_labels=False):
     
     if ds in ['income', 'breast-cancer', 'credit']:
-        if ds == 'income':
-            dataset = Income('../../datasets/income/', split='train')
-        elif ds == 'breast-cancer':
-            dataset = BreastCancer('../../datasets/breast-cancer/', split='train')
-        elif ds == 'credit':
-            dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='train')
+        dataset_factory = DatasetFactory()
+        dataset = dataset_factory.load_dataset(ds)
+        dataset.set_split('train')
+
         features = dataset.features.numpy()
         targets = dataset.targets.numpy()
         if not return_labels:
@@ -94,20 +80,6 @@ def get_vertical_train_data(ds, num_clients, rand_perm=True, return_labels=False
         imgs /= 255.
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets)).astype(np.float64)
-        client_data = [data[:, s] for s in split_cols]
-        return client_data, split_cols
-    
-    elif ds == 'avazu':
-        columns = 21
-        if num_clients > 7:
-            raise ValueError("'num_clients' must be smaller than 8.")
-        cols = np.arange(columns)
-        cols = np.random.permutation(cols)
-        split_cols = np.array_split(cols, num_clients)
-        dataset = Avazu('../../datasets/', split='train')
-        np_features = dataset.features.numpy()
-        np_targets = dataset.targets.numpy()
-        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
         client_data = [data[:, s] for s in split_cols]
         return client_data, split_cols
     
@@ -151,12 +123,10 @@ def split_dataset_hybrid(data, num_clients, num_cols, overlap_frac, sample_frac,
 def get_hybrid_train_data(ds, num_clients, overlap_frac=0.3,
                           sample_frac=None, seed=111, return_labels=False):
     if ds in ['income', 'breast-cancer', 'credit']:
-        if ds == 'income':
-            dataset = Income('../../datasets/income/', split='train')
-        elif ds == 'breast-cancer':
-            dataset = BreastCancer('../../datasets/breast-cancer/', split='train')
-        elif ds == 'credit':
-            dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='train')
+        dataset_factory = DatasetFactory()
+        dataset = dataset_factory.load_dataset(ds)
+        dataset.set_split('train')
+
         features = dataset.features.numpy()
         targets = dataset.targets.numpy()
         if not return_labels:
@@ -188,26 +158,12 @@ def get_hybrid_train_data(ds, num_clients, overlap_frac=0.3,
                                                       overlap_frac, sample_frac, seed)
         return client_data, subspaces, client_idx
     
-    elif ds == 'avazu':
-        columns = 21
-        if num_clients > 7:
-            raise ValueError("'num_clients' must be smaller than 8.")
-        dataset = Avazu('../../datasets/', split='train')
-        np_features = dataset.features.numpy()
-        np_targets = dataset.targets.numpy()
-        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
-        client_data, subspaces = split_dataset_hybrid(data, num_clients, columns, 
-                                                      overlap_frac, sample_frac, seed)
-        return client_data, subspaces
-    
 def get_test_data(ds):
-    if ds in ['income', 'breast-cancer', 'credit']:
-        if ds == 'income':
-            dataset = Income('../../datasets/income/', split='test')
-        elif ds == 'breast-cancer':
-            dataset = BreastCancer('../../datasets/breast-cancer/', split='test')
-        elif ds == 'credit':
-            dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/', split='test')
+    if ds in ['income', 'breast-cancer', 'credit', 'baf']:
+        dataset_factory = DatasetFactory()
+        dataset = dataset_factory.load_dataset(ds)
+        dataset.set_split('test')
+
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
         data = np.hstack((np_features, np_targets.reshape(-1, 1)))
@@ -222,12 +178,6 @@ def get_test_data(ds):
         imgs = dataset.data.reshape((-1, 28*28)).numpy()
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets))
-        return data
-    elif ds == 'avazu':
-        dataset = Avazu('../../datasets/', split='test')
-        np_features = dataset.features.numpy()
-        np_targets = dataset.targets.numpy()
-        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
         return data
     
 def make_data_loader(ds, batch_size=64):
@@ -244,23 +194,4 @@ def make_data_loader(ds, batch_size=64):
         tds = TensorDataset(torch.from_numpy(x), torch.from_numpy(y))
         tdl = DataLoader(tds, batch_size=batch_size)
         return tdl
-        
-class IncomePartitioner(BasicPartitioner):
-
-    num_classes = 2
-    num_features = 14
-
-class AvazuPartitioner(BasicPartitioner):
-
-    num_classes = 2
-    num_features = 16
-
-class BreasCancerPartitioner(BasicPartitioner):
-
-    num_classes = 2
-    num_features = 31
-
-class GimmeCreditPartitioner(BasicPartitioner):
-
-    num_classes = 2
-    num_features = 11
+    

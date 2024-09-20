@@ -83,7 +83,7 @@ class HistLeafNode(LeafNode):
                     density_idx[i] = j - 1
                     indices_assigned[i] = True
         if all(indices_assigned):
-            density = (len(self.data) / N) * self.hist[*density_idx]
+            density = (len(self.data) / N) * self.hist[density_idx]
             density = density if density != 0 else 1e-9
         else:
             return 1e-9

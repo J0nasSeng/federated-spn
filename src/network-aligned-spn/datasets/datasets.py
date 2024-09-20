@@ -1,6 +1,6 @@
 from torch.utils.data import Dataset
 from torch import FloatTensor, LongTensor
-from sklearn.preprocessing import StandardScaler, TargetEncoder, RobustScaler
+from sklearn.preprocessing import StandardScaler, TargetEncoder, RobustScaler, LabelEncoder
 from sklearn.experimental.enable_iterative_imputer import IterativeImputer
 from sklearn.model_selection import train_test_split
 import numpy as np
@@ -12,8 +12,20 @@ class TabularDataset(Dataset):
 
     def __init__(self, x=None, y=None) -> None:
         super().__init__()
+        self.X_train, self.X_valid, self.X_test, self.y_train, self.y_valid, self.y_test = None, None, None, None, None, None
         self.targets: FloatTensor = y
         self.features: LongTensor = x
+
+    def set_split(self, split):
+        if split == 'train':
+            self.features = self.X_train
+            self.targets = self.y_train
+        elif split == 'test':
+            self.features = self.X_test
+            self.targets = self.y_test
+        elif split == 'valid':
+            self.features = self.X_valid
+            self.targets = self.y_valid
 
 
 class Avazu(TabularDataset):
@@ -31,6 +43,7 @@ class Avazu(TabularDataset):
 
         else:
             raise ValueError(f'Split {split} not known')
+        self.name = 'avazu'
 
         
 
@@ -69,19 +82,11 @@ class Avazu(TabularDataset):
 
 class BreastCancer(TabularDataset):
 
-    def __init__(self, path, split='train') -> None:
+    def __init__(self, path) -> None:
         super().__init__()
+        self.name = 'breast-cancer'
         self.data = pd.read_csv(os.path.join(path, 'data.csv'))
-        X_train, X_valid, X_test, y_train, y_valid, y_test = self._preprocess()
-        if split == 'train':
-            self.features = X_train
-            self.targets = y_train
-        elif split == 'test':
-            self.features = X_test
-            self.targets = y_test
-        elif split == 'valid':
-            self.features = X_valid
-            self.targets = y_valid
+        self.X_train, self.X_valid, self.X_test, self.y_train, self.y_valid, self.y_test = self._preprocess()
 
     def _preprocess(self):
         self.data.drop(columns=['id'], inplace=True)
@@ -113,19 +118,11 @@ class BreastCancer(TabularDataset):
 
 class GimmeCredit(TabularDataset):
 
-    def __init__(self, path, split='train') -> None:
+    def __init__(self, path) -> None:
         super().__init__()
+        self.name = 'credit'
         self.train_data = pd.read_csv(os.path.join(path, 'cs-training.csv'))
-        X_train, X_valid, X_test, y_train, y_valid, y_test = self._preprocess()
-        if split == 'train':
-            self.features = X_train
-            self.targets = y_train
-        elif split == 'test':
-            self.features = X_test
-            self.targets = y_test
-        elif split == 'valid':
-            self.features = X_valid
-            self.targets = y_valid
+        self.X_train, self.X_valid, self.X_test, self.y_train, self.y_valid, self.y_test = self._preprocess()
         
     def _preprocess(self):
         self.train_data = self.train_data[self.train_data['age'] > 21] # filter outliers
@@ -162,22 +159,12 @@ class GimmeCredit(TabularDataset):
 
 class Income(TabularDataset):
 
-    def __init__(self, path, split='train') -> None:
+    def __init__(self, path) -> None:
         super().__init__()
-
-        self.split = split
+        self.name = 'income'
         self.train_data = pd.read_csv(os.path.join(path, 'train.csv'))
         self.test_data = pd.read_csv(os.path.join(path, 'train.csv'))
-        X_train, X_valid, X_test, y_train, y_valid, y_test = self._preprocess()
-        if split == 'train':
-            self.features = X_train
-            self.targets = y_train
-        elif split == 'valid':
-            self.features = X_valid
-            self.targets = y_valid
-        elif split == 'test':
-            self.features = X_test
-            self.targets = y_test
+        self.X_train, self.X_valid, self.X_test, self.y_train, self.y_valid, self.y_test = self._preprocess()
 
     def __len__(self):
         return len(self.features)
@@ -219,3 +206,124 @@ class Income(TabularDataset):
         y_valid = torch.from_numpy(y_valid.to_numpy())
         y_test = torch.from_numpy(y_test.to_numpy())
         return X_train, X_valid, X_test, y_train, y_valid, y_test
+    
+
+class BAFDataset(TabularDataset):
+
+    def __init__(self, path):
+        super().__init__()
+        self.name = 'baf'
+        self.data = pd.read_csv(os.path.join(path, 'Base.csv'))
+        self.X_train, self.X_valid, self.X_test, self.y_train, self.y_valid, self.y_test = self._preprocess()
+
+    def __len__(self):
+        return len(self.features)
+    
+    def __getitem__(self, index):
+        x = self.features[index]
+        y = self.targets[index]
+        return torch.hstack([x, y.unsqueeze(0)])
+
+    def _preprocess(self):
+        y = self.data['fraud_bool']
+        x = self.data.drop(columns=['fraud_bool', 'device_fraud_count'])
+        col_types = infer_column_types(x)
+        columns = x.columns.tolist() + ['fraud_bool']
+        # TODO: replace with TargetEncoder to make compatible to einets (they only allow Gaussians in leafs currently)
+        label_encoder = LabelEncoder()
+        for col in x.select_dtypes(include=['object']).columns:
+            x[col] = label_encoder.fit_transform(x[col])
+
+        y = y.to_numpy()
+        X_train, X_test, y_train, y_test = train_test_split(x, y, stratify=y, test_size=0.3, random_state= 42)
+
+        train_data_np = np.concatenate((X_train, y_train.reshape(-1, 1)), axis=1)
+        test_data_np = np.concatenate((X_test, y_test.reshape(-1, 1)), axis=1)
+        self.train_data = pd.DataFrame(train_data_np, columns=columns)
+        self.test_data = pd.DataFrame(test_data_np, columns=columns)
+
+        # handle outliers
+        col = ['prev_address_months_count', 'days_since_request', 'intended_balcon_amount']
+        for col in col:
+            percentiles = self.train_data[col].quantile(0.98)
+            if self.train_data[col].quantile(0.98) < 0.5 * self.train_data[col].max():
+                self.train_data[col][self.train_data[col] >= percentiles] = percentiles
+                self.test_data[col][self.test_data[col] >= percentiles] = percentiles
+
+        X = self.train_data.drop(['fraud_bool'], axis=1)
+        y = self.train_data['fraud_bool']
+        X_test = self.test_data.drop(['fraud_bool'], axis=1)
+        y_test = self.test_data['fraud_bool']
+        X_train, X_valid, y_train, y_valid = train_test_split(X, y, stratify=y, test_size=0.3, random_state= 42)
+
+        X_train, X_valid, X_test = X_train.to_numpy(), X_valid.to_numpy(), X_test.to_numpy()
+
+        scale_cols = [i for i, c in col_types.items() if c=='continuous']
+        sc = StandardScaler()
+        X_train[:,scale_cols] = sc.fit_transform(X_train[:, scale_cols])
+        X_valid[:,scale_cols] = sc.transform(X_valid[:, scale_cols])
+        X_test[:,scale_cols] = sc.transform(X_test[:, scale_cols])
+
+        X_train = torch.from_numpy(X_train)
+        X_valid = torch.from_numpy(X_valid)
+        X_test = torch.from_numpy(X_test)
+        y_train = torch.from_numpy(y_train.to_numpy())
+        y_valid = torch.from_numpy(y_valid.to_numpy())
+        y_test = torch.from_numpy(y_test.to_numpy())
+        return X_train, X_valid, X_test, y_train, y_valid, y_test
+    
+
+class DatasetFactory:
+
+    def __init__(self):
+        self.loaded_datasets = {}
+
+    def load_dataset(self, ds) -> Dataset:
+        if ds in self.loaded_datasets.keys():
+            return self.loaded_datasets[ds]
+        if ds == 'income':
+            dataset = Income('../../datasets/income/')
+        elif ds == 'breast-cancer':
+            dataset = BreastCancer('../../datasets/breast-cancer/')
+        elif ds == 'credit':
+            dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/')
+        elif ds == 'baf':
+            dataset = BAFDataset('../../datasets/BAF/')
+        self.loaded_datasets[ds] = dataset
+        
+        return dataset
+    
+    
+def infer_column_types(df):
+    column_types = {}
+    
+    for i, col in enumerate(df.columns):
+        unique_vals = df[col].nunique()
+        total_vals = len(df[col])
+        dtype = df[col].dtype
+
+        # Categorical: Object types or integers with a small number of unique values
+        if pd.api.types.is_object_dtype(dtype) or pd.api.types.is_categorical_dtype(dtype):
+            if unique_vals == 2:
+                column_types[i] = 'binary'
+            else:
+                column_types[i] = 'categorical'
+        elif pd.api.types.is_integer_dtype(dtype):
+            # Heuristic: Consider discrete if unique values are small relative to total rows
+            if unique_vals / total_vals < 0.05:  # Arbitrary threshold
+                if unique_vals == 2:
+                    column_types[i] = 'binary'
+                else:
+                    column_types[i] = 'discrete'
+            else:
+                column_types[i] = 'continuous'
+        elif pd.api.types.is_float_dtype(dtype):
+            # Heuristic: Assume float columns are continuous
+            if unique_vals == 2:
+                column_types[i] = 'binary'
+            else:
+                column_types[i] = 'continuous'
+        else:
+            column_types[i] = 'unknown'
+    
+    return column_types

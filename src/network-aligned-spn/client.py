@@ -14,6 +14,7 @@ import context
 import utils
 from einet.einet import Einet, EinetConfig
 from einet.distributions.normal import RatNormal
+from einet.distributions.binomial import Binomial
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
@@ -27,28 +28,34 @@ n_gpus = 1 if torch.cuda.is_available() else 0
 @ray.remote(num_gpus=n_gpus)
 class EinetNode:
 
-    def __init__(self, dataset, num_epochs=10, num_classes=2) -> None:
+    def __init__(self, dataset, num_epochs=10, num_classes=2, train_algo='em', device=-1) -> None:
         self.dataset = dataset
         self.num_epochs = num_epochs
-        self.device = torch.device(f'cuda') if torch.cuda.is_available() else torch.device('cpu')
+        self.device = torch.device(f'cuda:{device}') if device > -1 else torch.device('cpu')
         self.einets = {}
         self.subspaces = []
         self._rtpt = RTPT('JS', 'FedSPN', num_epochs)
         self._rtpt.start()
         self.num_classes = num_classes
+        self.train_algo = train_algo
 
     def train(self):
         """
             Train SPN on local data
-            Training loop to train the SPN. Follows EM-procedure.
+            Training loop to train the SPN. Follows SGD.
         """
+        if self.train_algo == 'em':
+            self._train_em()
+        elif self.train_algo == 'sgd':
+            self._train_sgd()
+
+    def _train_sgd(self):
         for subspace, train_loader in self.subspaces:
-            einet_cfg = EinetConfig(len(subspace) - 1, num_classes=self.num_classes, 
+            einet_cfg = EinetConfig(len(subspace), num_classes=self.num_classes, 
                                     leaf_type=RatNormal, leaf_kwargs={}, depth=5, num_leaves=20,
                                     num_sums=20, num_repetitions=10)
             einet = Einet(einet_cfg)
             optim = torch.optim.SGD(einet.parameters(), 0.1)
-            cross_entropy = torch.nn.CrossEntropyLoss()
             self.losses = []
             for epoch_count in range(self.num_epochs):
                 optim.zero_grad()
@@ -56,10 +63,11 @@ class EinetNode:
                 total_ll = 0.0
                 for i, (x, y) in enumerate(train_loader):
                     x = x.to(device=self.device, dtype=torch.float32)
-                    y = y.to(device=self.device, dtype=torch.long)
+                    y = y.to(device=self.device, dtype=torch.float32)
+                    x_in = torch.stack((x, y), dim=1)
                     x = x.unsqueeze(1)
-                    outputs = einet(x)
-                    loss = cross_entropy(outputs, y)
+                    outputs = einet(x_in)
+                    loss = utils.log_likelihoods(outputs)
                     
                     loss.backward()
                     optim.step()
@@ -67,6 +75,9 @@ class EinetNode:
                 self.losses.append(total_ll / len(train_loader))
                 print(f"Epoch {epoch_count+1}/{self.num_epochs}: \t {total_ll / len(train_loader)}")
             self.einets[tuple(subspace)] = einet
+
+    def _train_em(self):
+        pass
 
     def assign_subset(self, subspace_with_data):
         self.subspaces.append(subspace_with_data)

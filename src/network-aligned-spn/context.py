@@ -16,13 +16,19 @@ ctxts = {
     },
     'breast-cancer': {
         i: MetaType.REAL for i in range(30)
+    },
+    'baf': {
+        i: MetaType.REAL for i in [0, 1, 5, 6, 9, 10, 11, 22, 25]
     }
 }
 
 ctxts['income'][14] = MetaType.BINARY
 ctxts['income'][15] = MetaType.BINARY
+
 ctxts['mnist'][(28*28)] = MetaType.DISCRETE
+
 ctxts['avazu'][0] = MetaType.BINARY
+
 ctxts['credit'][9] = MetaType.REAL
 ctxts['credit'][10] = MetaType.BINARY
 ctxts['credit'][0] = MetaType.REAL
@@ -30,7 +36,21 @@ ctxts['credit'][1] = MetaType.DISCRETE
 ctxts['credit'][2] = MetaType.DISCRETE
 ctxts['credit'][3] = MetaType.REAL
 ctxts['credit'][4] = MetaType.REAL
+
 ctxts['breast-cancer'][30] = MetaType.BINARY
+
+ctxts['baf'][16] = MetaType.BINARY
+ctxts['baf'][18] = MetaType.BINARY
+ctxts['baf'][19] = MetaType.BINARY
+ctxts['baf'][21] = MetaType.BINARY
+ctxts['baf'][23] = MetaType.BINARY
+ctxts['baf'][24] = MetaType.BINARY
+ctxts['baf'][27] = MetaType.BINARY
+ctxts['baf'][30] = MetaType.BINARY
+for i in range(30):
+    if i not in list(ctxts['baf'].keys()):
+        ctxts['baf'][i] = MetaType.DISCRETE
+
 
 feature_types = {
     'income': {
