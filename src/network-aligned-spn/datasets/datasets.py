@@ -210,9 +210,10 @@ class Income(TabularDataset):
 
 class BAFDataset(TabularDataset):
 
-    def __init__(self, path):
+    def __init__(self, path, scale_all=False):
         super().__init__()
         self.name = 'baf'
+        self._scale_all = scale_all
         self.data = pd.read_csv(os.path.join(path, 'Base.csv'))
         self.X_train, self.X_valid, self.X_test, self.y_train, self.y_valid, self.y_test = self._preprocess()
 
@@ -260,9 +261,14 @@ class BAFDataset(TabularDataset):
 
         scale_cols = [i for i, c in col_types.items() if c=='continuous']
         sc = StandardScaler()
-        X_train[:,scale_cols] = sc.fit_transform(X_train[:, scale_cols])
-        X_valid[:,scale_cols] = sc.transform(X_valid[:, scale_cols])
-        X_test[:,scale_cols] = sc.transform(X_test[:, scale_cols])
+        if self._scale_all:
+            X_train = sc.fit_transform(X_train)
+            X_valid = sc.transform(X_valid)
+            X_test = sc.transform(X_test)
+        else:
+            X_train[:,scale_cols] = sc.fit_transform(X_train[:, scale_cols])
+            X_valid[:,scale_cols] = sc.transform(X_valid[:, scale_cols])
+            X_test[:,scale_cols] = sc.transform(X_test[:, scale_cols])
 
         X_train = torch.from_numpy(X_train)
         X_valid = torch.from_numpy(X_valid)
@@ -278,7 +284,7 @@ class DatasetFactory:
     def __init__(self):
         self.loaded_datasets = {}
 
-    def load_dataset(self, ds) -> Dataset:
+    def load_dataset(self, ds, **ds_kwargs) -> Dataset:
         if ds in self.loaded_datasets.keys():
             return self.loaded_datasets[ds]
         if ds == 'income':
@@ -288,7 +294,7 @@ class DatasetFactory:
         elif ds == 'credit':
             dataset = GimmeCredit('../../datasets/GiveMeSomeCredit/')
         elif ds == 'baf':
-            dataset = BAFDataset('../../datasets/BAF/')
+            dataset = BAFDataset('../../datasets/BAF/', **ds_kwargs)
         self.loaded_datasets[ds] = dataset
         
         return dataset

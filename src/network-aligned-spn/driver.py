@@ -710,7 +710,7 @@ def main_einsum(args):
     # train and create network aligned SPN
     if args.setting == 'horizontal':
         train_data = get_horizontal_train_data(args.dataset, args.num_clients, 
-                                               args.sample_partitioning, args.dir_alpha)
+                                               args.sample_partitioning, args.dir_alpha, scale_all=True)
         feature_spaces = [list(range(train_data[0].shape[1])) for _ in range(args.num_clients)]
         train_data = make_data_loader(train_data, args.batch_size)
         nodes = server.train(train_data, feature_spaces, args)
@@ -757,8 +757,8 @@ def main(args):
             acc, f1_micro, f1_macro, ll = main_spflow(args)
         elif args.model == 'rf':
             acc, f1_micro, f1_macro, ll = main_rf(args)
-        #elif args.model == 'einsum':
-        #    acc, f1_micro, f1_macro = main_einsum(args)
+        elif args.model == 'einsum':
+            acc, f1_micro, f1_macro = main_einsum(args)
         elif args.model == 'ddt':
             acc, f1_micro, f1_macro, ll = main_ddt(args)
         else:

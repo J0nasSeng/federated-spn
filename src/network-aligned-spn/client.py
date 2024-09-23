@@ -14,7 +14,8 @@ import context
 import utils
 from einet.einet import Einet, EinetConfig
 from einet.distributions.normal import RatNormal
-from einet.distributions.binomial import Binomial
+from einsum.EinsumNetwork import Args, EinsumNetwork
+from einsum.Graph import random_binary_trees
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
@@ -32,6 +33,7 @@ class EinetNode:
         self.dataset = dataset
         self.num_epochs = num_epochs
         self.device = torch.device(f'cuda:{device}') if device > -1 else torch.device('cpu')
+        self.losses = []
         self.einets = {}
         self.subspaces = []
         self._rtpt = RTPT('JS', 'FedSPN', num_epochs)
@@ -52,11 +54,10 @@ class EinetNode:
     def _train_sgd(self):
         for subspace, train_loader in self.subspaces:
             einet_cfg = EinetConfig(len(subspace), num_classes=self.num_classes, 
-                                    leaf_type=RatNormal, leaf_kwargs={}, depth=5, num_leaves=20,
+                                    leaf_type=RatNormal, leaf_kwargs={}, depth=4, num_leaves=20,
                                     num_sums=20, num_repetitions=10)
-            einet = Einet(einet_cfg)
-            optim = torch.optim.SGD(einet.parameters(), 0.1)
-            self.losses = []
+            einet = Einet(einet_cfg).to(self.device)
+            optim = torch.optim.SGD(einet.parameters(), 0.001)
             for epoch_count in range(self.num_epochs):
                 optim.zero_grad()
                 self._rtpt.step()
@@ -64,20 +65,61 @@ class EinetNode:
                 for i, (x, y) in enumerate(train_loader):
                     x = x.to(device=self.device, dtype=torch.float32)
                     y = y.to(device=self.device, dtype=torch.float32)
-                    x_in = torch.stack((x, y), dim=1)
+                    x_in = torch.cat((x, y.unsqueeze(1)), dim=1)
                     x = x.unsqueeze(1)
                     outputs = einet(x_in)
-                    loss = utils.log_likelihoods(outputs)
-                    
+                    loss = torch.mean(utils.log_likelihoods(outputs))
+
                     loss.backward()
                     optim.step()
                     total_ll += loss.item()
+                    if i % 50 == 0:
+                        print(f"Epoch {epoch_count+1}/{self.num_epochs}: Batch: {i}/{len(train_loader)} \t {total_ll / len(train_loader)}")
                 self.losses.append(total_ll / len(train_loader))
                 print(f"Epoch {epoch_count+1}/{self.num_epochs}: \t {total_ll / len(train_loader)}")
             self.einets[tuple(subspace)] = einet
 
     def _train_em(self):
-        pass
+        for subspace, train_loader in self.subspaces:
+            config = Args(
+                len(subspace),
+                1,
+                num_input_distributions=20,
+                num_sums=20,
+                num_classes=self.num_classes,
+                exponential_family_args={
+                    'min_var': 1e-3,
+                    'max_var': 1.
+                },
+                online_em_frequency=5,
+                online_em_stepsize=0.01
+            )
+            graph = random_binary_trees(len(subspace), 4, 10)
+            einet = EinsumNetwork(graph, config)
+            einet.initialize()
+            einet = einet.to(self.device)
+            for epoch_count in range(self.num_epochs):
+
+                total_ll = 0.0
+                for i, (x, y) in enumerate(train_loader):
+
+                    x = x.to(device=self.device, dtype=torch.float32)
+                    y = y.to(device=self.device, dtype=torch.float32)
+                    x_in = torch.cat((x, y.unsqueeze(1)), dim=1)
+                    x_in = x_in.unsqueeze(2)
+                    x_in = x_in.to(self.device)
+
+                    ll_sample = einet.forward(x_in)
+                    log_likelihood = ll_sample.sum()
+                    log_likelihood.backward()
+                    einet.em_process_batch()
+                    total_ll += log_likelihood.item()
+
+                self.losses.append(total_ll / len(train_loader))
+                einet.em_update()
+                print(f"Epoch {epoch_count+1}/{self.num_epochs}: \t {total_ll / len(train_loader)}")
+            self.einets[tuple(subspace)] = einet
+
 
     def assign_subset(self, subspace_with_data):
         self.subspaces.append(subspace_with_data)

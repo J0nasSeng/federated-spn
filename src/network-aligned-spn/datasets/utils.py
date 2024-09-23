@@ -8,10 +8,10 @@ from torch.utils.data import TensorDataset, DataLoader
 import torch
 from fedlab.utils.dataset import MNISTPartitioner
 
-def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2):
+def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2, **ds_kwargs):
     if ds in ['income', 'breast-cancer', 'credit', 'baf']:
         dataset_factory = DatasetFactory()
-        dataset = dataset_factory.load_dataset(ds)
+        dataset = dataset_factory.load_dataset(ds, **ds_kwargs)
         dataset.set_split('train')
         partitioner_factory = PartitionerFactory()
         Partitioner_cls = partitioner_factory.get_partitioner_cls(dataset)
