@@ -1,5 +1,5 @@
 import numpy as np
-from torchvision.datasets import ImageNet
+from torchvision.datasets import ImageNet, CelebA
 from torchvision.transforms import Compose, CenterCrop, Resize, ToTensor
 from torch.utils.data import Subset, DataLoader
 from einsum import EinsumNetwork, Graph, EinetMixture
@@ -14,12 +14,13 @@ from multiprocessing import Process
 import pickle
 from rtpt import RTPT
 import pandas as pd
+from pathlib import Path
 
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
 format=log_format, datefmt='%m/%d %I:%M:%S %p')
 
-def init_spn(device):
+def init_spn(device, num_vars, num_dims):
     """
         Build a SPN (implemented as an einsum network). The structure is either
         the same as proposed in https://arxiv.org/pdf/1202.3732.pdf (referred to as
@@ -42,8 +43,8 @@ def init_spn(device):
         raise AssertionError("Unknown Structure")
 
     args = EinsumNetwork.Args(
-            num_var=config.num_vars,
-            num_dims=config.num_dims,
+            num_var=num_vars,
+            num_dims=num_dims,
             num_classes=1,
             num_sums=config.K,
             num_input_distributions=config.K,
@@ -57,19 +58,35 @@ def init_spn(device):
     einet.to(device)
     return einet
 
-def train(img_ids, num_epochs, device_id, chk_path, cluster_count):
+def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imagenet'):
 
     """
     Training loop to train the SPN. Follows EM-procedure.
     """
+    if not os.path.exists(chk_path):
+        path = Path(chk_path)
+        path.mkdir(parents=True)
     logging.info('Starting Training...')
     log_likelihoods = []
     device = torch.device(f'cuda:{device_id}')
-    transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
-    imagenet = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
-    subset = Subset(imagenet, img_ids)
+    if dataset == 'imagenet':
+        transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
+        ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
+        num_vars = 112*112
+        num_dims = 3
+    elif dataset == 'imagenet32':
+        transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
+        ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
+        num_vars = 32*32
+        num_dims = 3
+    elif dataset == 'celeba':
+        transform = Compose([ToTensor(), Resize(64, antialias=True), CenterCrop(64)])
+        ds = CelebA('/storage-01/datasets/', transform=transform)
+        num_vars = 64*64
+        num_dims = 3
+    subset = Subset(ds, img_ids)
     loader = DataLoader(subset, batch_size=config.batch_size, num_workers=2)
-    einet = init_spn(device)
+    einet = init_spn(device, num_vars, num_dims)
     for epoch_count in range(num_epochs):
         einet.train()
 
@@ -77,7 +94,7 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count):
         for i, (x, y) in enumerate(loader):
             x = x.to(device)
             x = x.permute((0, 2, 3, 1))
-            x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
+            x = x.reshape(x.shape[0], num_vars, num_dims)
             ll_sample = einet.forward(x)
             #ll_sample = EinsumNetwork.log_likelihoods(outputs)
             log_likelihood = ll_sample.sum()
@@ -98,7 +115,7 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count):
     df.to_csv(os.path.join(chk_path, f'chk_{cluster_count}.csv'))
     return einet
 
-def train_mixture(clusters):
+def train_mixture(clusters, dataset='imagenet'):
     unique_clusters = np.unique(clusters)
     num_slices = int(np.ceil(len(unique_clusters) / config.num_processes))
     unique_clusters = np.array_split(unique_clusters, num_slices)
@@ -112,7 +129,7 @@ def train_mixture(clusters):
             img_ids = np.argwhere(clusters == rc).flatten()
 
             print(f"Cluster-size={len(img_ids)}")
-            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints_4gpus_16procs/', rc))
+            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints/imagenet/v2/checkpoints_ceinet_16clusters_small/', rc, dataset))
             p.start()
             processes.append(p)
     
@@ -120,12 +137,15 @@ def train_mixture(clusters):
             p.join()
         rt.step()
 
-clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch_16_centers.npy')
+clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch_16.npy')
+print(len(clusters))
 # encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
 # train einets in parallel. Start num_slices processes in parallel, wait
 # until they finished and start next batch
 if __name__ == '__main__':
-    train_mixture(clusters)
+    torch.manual_seed(0)
+    np.random.seed(0)
+    train_mixture(clusters, 'imagenet')
 
 
 #weights = np.array(cluster_sizes) / np.sum(cluster_sizes)

@@ -25,7 +25,7 @@ import argparse
 from sklearn.metrics import accuracy_score, f1_score
 import utils
 from spn_leaf import SPNLeaf, DensityLeaf
-from einet.layers import Sum as SumLayer
+from einsum.EinetMixture import EinetMixture
 import torch
 import torch.nn as nn
 import pandas as pd
@@ -429,13 +429,15 @@ class EinsumServer:
         """
             Train FedSPN in horizontal scenario with Einsum networks as SPN implementation on client side.
         """
-        ray.init()
+        ray.init(num_cpus=25, num_gpus=8)
         train_jobs = []
         assign_jobs = []
         nodes = []
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(gpu) for gpu in args.gpus])
         for c in range(args.num_clients):
             logging.info(f'Train node {c}')
-            node = EinetNode.remote(args.dataset, num_classes=10)
+            gpu_idx = c % len(args.gpus)
+            node = EinetNode.remote(args.dataset, num_classes=10, device=gpu_idx)
             nodes.append(node)
             if args.setting == 'horizontal':
                 train_subset = train_data[c]
@@ -459,13 +461,13 @@ class EinsumServer:
 
         return nodes
 
-    def build_spn(self, feature_subspaces, nodes):
+    def build_spn(self, feature_subspaces, nodes, device):
         """
             Build network-aligned SPN
         """
         if len(feature_subspaces) == 1:
             # horizontal case
-            spn, client_spns = self.build_spn_horizontal(nodes)
+            spn, client_spns = self.build_spn_horizontal(nodes, device)
         else:
             # hybrid & vertical case
             spn = Product()
@@ -486,24 +488,36 @@ class EinsumServer:
                     client_spns.append(client_spn)
                     spn.children += [SPNLeaf(subspace)]
 
+        self.spn = spn
         return spn, client_spns
     
-    def build_spn_horizontal(self, nodes):
+    def build_spn_horizontal(self, nodes, device):
         client_spns = [ray.get(node.get_spns.remote()) for node in nodes]
-        client_spns = [list(d.values())[0] for d in client_spns]
-        num_classes = client_spns[0].config.num_classes
+        client_spns = [list(d.values())[0].to(device) for d in client_spns]
         ds_len = [ray.get(node.get_dataset_len.remote()) for node in nodes]
         norm = sum(ds_len)
         weights = []
         for l in ds_len:
-            w = [l / norm] * num_classes
+            w = [l / norm]
             weights += w
-        weights = torch.tensor([weights] * num_classes).T
-        weights = weights.unsqueeze(0)
-        weights = weights.unsqueeze(3)
-        spn = SumLayer(num_classes*len(nodes), 1, num_classes)
-        spn.weights = nn.Parameter(weights)
+        spn = EinetMixture(weights, client_spns)
         return spn, client_spns
+
+    def compute_ll(self, test_data, client_spns, device):
+        # TODO: currently, only horiztonal federated Einets are supported.
+        #       Extend this!
+        total_ll = 0.0
+        print("Compute LL on test data")
+        for i, (x, y) in enumerate(test_data):
+            if i % 50 == 0:
+                print(f"Test batch {i}/{len(test_data)}")
+            x_in = torch.cat((x, y.unsqueeze(1)), dim=1).to(torch.float32)
+            x_in = x_in.unsqueeze(2)
+            x_in = x_in.to(device)
+            ll = self.spn.log_likelihood(x_in)
+            total_ll += ll
+        
+        return total_ll / len(test_data)
 
     def classify(self, client_spns, spn, test_data):
         """
@@ -704,13 +718,15 @@ def main_einsum(args):
         use RAT SPN client 
     """
     server = EinsumServer()
+    server_device = torch.device(f'cuda:{args.gpus[0]}')
 
     if args.sample_partitioning == 'iid':
         args.dir_alpha = 0.
     # train and create network aligned SPN
     if args.setting == 'horizontal':
         train_data = get_horizontal_train_data(args.dataset, args.num_clients, 
-                                               args.sample_partitioning, args.dir_alpha, scale_all=True)
+                                               args.sample_partitioning, args.dir_alpha, args.ignore_targets, 
+                                               device=server_device, scale_all=True)
         feature_spaces = [list(range(train_data[0].shape[1])) for _ in range(args.num_clients)]
         train_data = make_data_loader(train_data, args.batch_size)
         nodes = server.train(train_data, feature_spaces, args)
@@ -725,19 +741,20 @@ def main_einsum(args):
         nodes = server.train(train_data, feature_spaces, args)
 
     grouped_feature_spaces = utils.group_clients_by_subspace(feature_spaces)
-    na_spn, client_spns = server.build_spn(grouped_feature_spaces, nodes)
+    spn, client_spns = server.build_spn(grouped_feature_spaces, nodes, server_device)
 
     # get accuracy
-    test_data = get_test_data(args.dataset)
+    test_data = get_test_data(args.dataset, args.ignore_targets)
     test_data = make_data_loader(test_data, args.batch_size)
-    acc, f1_micro, f1_macro = server.classify(client_spns, na_spn, test_data)
+    ll = server.compute_ll(test_data, client_spns, server_device)
+    
 
     rtpt.step()
 
     # shut down ray cluster
     ray.shutdown()
 
-    return acc, f1_micro, f1_macro
+    return -1, -1, -1, ll
 
 def main(args):
     # some sanity checks
@@ -758,7 +775,7 @@ def main(args):
         elif args.model == 'rf':
             acc, f1_micro, f1_macro, ll = main_rf(args)
         elif args.model == 'einsum':
-            acc, f1_micro, f1_macro = main_einsum(args)
+            acc, f1_micro, f1_macro, ll = main_einsum(args)
         elif args.model == 'ddt':
             acc, f1_micro, f1_macro, ll = main_ddt(args)
         else:
@@ -788,11 +805,13 @@ parser.add_argument('--overlap-frac-hybrid', default=0.3, type=float)
 parser.add_argument('--sample-frac', default=-1., type=float)
 parser.add_argument('--num-experiments', default=1, type=int)
 parser.add_argument('--dir-alpha', default=0.0, type=float)
-parser.add_argument('--batch-size', default=64, type=int)
+parser.add_argument('--batch-size', default=256, type=int)
 parser.add_argument('--num-clusters', default=2, type=int)
 parser.add_argument('--glueing', default='combinatorial')
 parser.add_argument('--model', default='spflow')
 parser.add_argument('--cluster-by-label', default=0, type=int)
+parser.add_argument('--ignore-targets', action='store_true')
+parser.add_argument('--gpus', action='store', type=int, nargs='+')
 
 args = parser.parse_args()
 

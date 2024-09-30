@@ -1,5 +1,5 @@
 import numpy as np
-from torchvision.datasets import ImageNet, SVHN
+from torchvision.datasets import ImageNet, SVHN, CelebA
 from torchvision.transforms import Compose, CenterCrop, Resize, ToTensor
 from torch.utils.data import Subset, DataLoader
 from einsum import EinsumNetwork, Graph, EinetMixture
@@ -14,12 +14,13 @@ from multiprocessing import Process
 import pickle
 from rtpt import RTPT
 import pandas as pd
+from pathlib import Path
 
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
 format=log_format, datefmt='%m/%d %I:%M:%S %p')
 
-def init_spn(device):
+def init_spn(device, num_vars, num_dims):
     """
         Build a SPN (implemented as an einsum network). The structure is either
         the same as proposed in https://arxiv.org/pdf/1202.3732.pdf (referred to as
@@ -35,15 +36,15 @@ def init_spn(device):
         pd_delta = [[config.height / d, config.width / d] for d in config.pd_num_pieces]
         graph = Graph.poon_domingos_structure(shape=(config.height, config.width), delta=pd_delta)
     elif config.structure == 'binary-trees':
-        graph = Graph.random_binary_trees(num_var=config.num_vars, depth=config.depth, num_repetitions=config.num_repetitions)
+        graph = Graph.random_binary_trees(num_var=num_vars, depth=config.depth, num_repetitions=config.num_repetitions)
     elif config.structure == 'flat-binary-tree':
         graph = Graph.binary_tree_spn(shape=(config.height, config.width))
     else:
         raise AssertionError("Unknown Structure")
 
     args = EinsumNetwork.Args(
-            num_var=config.num_vars,
-            num_dims=config.num_dims,
+            num_var=num_vars,
+            num_dims=num_dims,
             num_classes=1,
             num_sums=config.K,
             num_input_distributions=config.K,
@@ -57,23 +58,36 @@ def init_spn(device):
     einet.to(device)
     return einet
 
-def train(num_epochs, device_id, chk_path, cluster_count):
+def train(num_epochs, device_id, chk_path, cluster_count, dataset='imagenet'):
 
     """
     Training loop to train the SPN. Follows EM-procedure.
     """
+    if not os.path.exists(chk_path):
+        path = Path(chk_path)
+        path.mkdir(parents=True)
     rt = RTPT('JS', 'FedEinsum', num_epochs)
     rt.start()
     logging.info('Starting Training...')
     log_likelihoods = []
     device = torch.device(f'cuda:{device_id}')
-    # reserve GPU
-    tensor = torch.randn(3).to(device)
-    transform = Compose([ToTensor(), Resize(config.height, antialias=True), CenterCrop(config.height)])
-    #dataset = SVHN('../datasets/', transform=transform, download=True)
-    dataset = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
+    if dataset == 'imagenet':
+        num_vars = 112*112
+        num_dims = 3
+        transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
+        dataset = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
+    elif dataset == 'imagenet32':
+        num_vars = 32*32
+        num_dims = 3
+        transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
+        dataset = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
+    elif dataset == 'celeba':
+        num_vars = 64*64
+        num_dims = 3
+        transform = Compose([ToTensor(), Resize(64, antialias=True), CenterCrop(64)])
+        dataset = CelebA('/storage-01/datasets/', transform=transform)
     loader = DataLoader(dataset, batch_size=config.batch_size, num_workers=2)
-    einet = init_spn(device)
+    einet = init_spn(device, num_vars, num_dims)
     for epoch_count in range(num_epochs):
         einet.train()
 
@@ -81,7 +95,7 @@ def train(num_epochs, device_id, chk_path, cluster_count):
         for i, (x, y) in enumerate(loader):
             x = x.to(device)
             x = x.permute((0, 2, 3, 1))
-            x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
+            x = x.reshape(x.shape[0], num_vars, num_dims)
             ll_sample = einet.forward(x)
             #ll_sample = EinsumNetwork.log_likelihoods(outputs)
             log_likelihood = ll_sample.sum()
@@ -104,7 +118,9 @@ def train(num_epochs, device_id, chk_path, cluster_count):
     return einet
 
 if __name__ == '__main__':
-    train(config.num_epochs, config.devices[0], './checkpoints_1gpus_1procs_v1/', 0)
+    torch.manual_seed(0)
+    np.random.seed(0)
+    train(config.num_epochs, config.devices[0], './checkpoints/imagenet/v5/checkpoints_einet/', 0, 'imagenet')
 
 
 #weights = np.array(cluster_sizes) / np.sum(cluster_sizes)

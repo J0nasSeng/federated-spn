@@ -78,5 +78,5 @@ class EinetMixture:
                     lls[:, einet_count] = log_likelihoods(outputs, labels=batch_labels).squeeze()
                     lls[:, einet_count] -= torch.log(torch.tensor(self.p[einet_count]))
                 lls = torch.logsumexp(lls, dim=1)
-                ll_total += lls.sum().item()
+                ll_total += lls.mean().item()
             return ll_total

@@ -30,13 +30,19 @@ def encode_imagenet(args):
     model = model.to(f'cuda:{args.gpu}')
     if args.model == 'resnet':
         transform = ResNet152_Weights.DEFAULT.transforms()
-        dataset = torchvision.datasets.ImageNet(args.data_path, 'train', transform=transform)
-        dataloader = DataLoader(dataset, batch_size=256, shuffle=False)
+        if args.dataset == 'imagenet':
+            dataset = torchvision.datasets.ImageNet(args.data_path, 'train', transform=transform)
+        elif args.dataset == 'celeba':
+            dataset = torchvision.datasets.CelebA(args.data_path, 'train', transform=transform)
+        dataloader = DataLoader(dataset, batch_size=256, shuffle=False, num_workers=4)
         encodings = resnet_encode(model, dataloader, args)
     elif args.model == 'vit':
         transform = ViT_L_16_Weights.DEFAULT.transforms()
-        dataset = torchvision.datasets.ImageNet(args.data_path, 'train', transform=transform)
-        dataloader = DataLoader(dataset, batch_size=256, shuffle=False)
+        if args.dataset == 'imagenet':
+            dataset = torchvision.datasets.ImageNet(args.data_path, 'train', transform=transform)
+        elif args.dataset == 'celeba':
+            dataset = torchvision.datasets.CelebA(args.data_path, 'train', transform=transform)
+        dataloader = DataLoader(dataset, batch_size=256, shuffle=False, num_workers=4)
         encodings = vit_encode(model, dataloader, args)
     
     np.save(args.encoding_file, encodings.numpy())
@@ -72,7 +78,7 @@ def vit_encode(vit, dataloader, args):
             feats = vit.encoder(feats)
             feats = feats[:, 0] # we only want the representation of cls-token
             encodings.append(feats.cpu())
-            if i % 100 == 0:
+            if i % 10 == 0:
                 print(f"Batch {i}/{len(dataloader)}")
             del x
     encodings = torch.cat(encodings, dim=0)
@@ -108,7 +114,7 @@ def cluster_encodings(args):
 
 
 def main(args):
-    rt = rtpt.RTPT('JS', 'Imagenet_Clustering', 1)
+    rt = rtpt.RTPT('JS', 'Deep_Image_Clustering', 1)
     rt.start()
     if args.reuse_encodings:
         print(f"Reusing encodings: {args.encoding_file}")
@@ -131,6 +137,7 @@ parser.add_argument('--dbscan-eps', default=0.5, type=float)
 parser.add_argument('--model', default='resnet')
 parser.add_argument('--gpu', default=0, type=int)
 parser.add_argument('--data-path', default='/storage-01/datasets/imagenet')
+parser.add_argument('--dataset', default='imagenet')
 
 args = parser.parse_args()
 

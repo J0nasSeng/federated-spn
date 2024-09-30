@@ -1,4 +1,3 @@
-from .datasets import TabularDataset
 import numpy as np
 from datasets.datasets import DatasetFactory
 from datasets.partitioners import PartitionerFactory
@@ -7,18 +6,47 @@ import torchvision
 from torch.utils.data import TensorDataset, DataLoader
 import torch
 from fedlab.utils.dataset import MNISTPartitioner
+from kmeans_pytorch import kmeans
 
-def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2, **ds_kwargs):
-    if ds in ['income', 'breast-cancer', 'credit', 'baf']:
+SUPPORTED_DATASETS = ['income', 'breast-cancer', 'credit', 'baf', 'santander']
+
+def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2, ignore_targets=False, device=None, **ds_kwargs):
+    if ds in SUPPORTED_DATASETS:
         dataset_factory = DatasetFactory()
         dataset = dataset_factory.load_dataset(ds, **ds_kwargs)
         dataset.set_split('train')
-        partitioner_factory = PartitionerFactory()
-        Partitioner_cls = partitioner_factory.get_partitioner_cls(dataset)
-        partitioner = Partitioner_cls(dataset.targets, num_clients, partition=partitioning, dir_alpha=dir_alpha)
-        np_features = dataset.features.numpy()
-        np_targets = dataset.targets.numpy()
-        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
+        if partitioning != 'cluster':
+            partitioner_factory = PartitionerFactory()
+            Partitioner_cls = partitioner_factory.get_partitioner_cls(dataset)
+            partitioner = Partitioner_cls(dataset.targets, num_clients, partition=partitioning, dir_alpha=dir_alpha)
+            np_features = dataset.features.numpy()
+            np_targets = dataset.targets.numpy()
+        else:
+            if num_clients > 1:
+                cluster_device = device if device is not None else torch.device('cpu')
+                cluster_ids, cluster_centers = kmeans(dataset.features, num_clients, device=cluster_device, tol=0.007)
+                data = []
+                cluster_ids = cluster_ids.cpu()
+                for cid in torch.unique(cluster_ids):
+                    cidx = torch.argwhere(cluster_ids == cid).flatten()
+                    client_features = dataset.features[cidx].numpy()
+                    client_targets = dataset.targets[cidx].numpy()
+                    if ignore_targets:
+                        data.append(client_features)
+                    else:
+                        data.append(np.hstack((np_features, client_targets.reshape(-1, 1))))
+                return data
+            else:
+                np_features = dataset.features.numpy()
+                np_targets = dataset.targets.numpy()
+                if ignore_targets:
+                    return [np_features]
+                else:
+                    return [np.hstack((np_features, np_targets.reshape(.1, 1)))]
+        if ignore_targets:
+            data = np_features
+        else:
+            data = np.hstack((np_features, np_targets.reshape(-1, 1)))
     elif ds == 'mnist':
         transform=torchvision.transforms.Compose([
                                torchvision.transforms.ToTensor(),
@@ -40,7 +68,7 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
 
 def get_vertical_train_data(ds, num_clients, rand_perm=True, return_labels=False):
     
-    if ds in ['income', 'breast-cancer', 'credit']:
+    if ds in SUPPORTED_DATASETS:
         dataset_factory = DatasetFactory()
         dataset = dataset_factory.load_dataset(ds)
         dataset.set_split('train')
@@ -122,7 +150,7 @@ def split_dataset_hybrid(data, num_clients, num_cols, overlap_frac, sample_frac,
     
 def get_hybrid_train_data(ds, num_clients, overlap_frac=0.3,
                           sample_frac=None, seed=111, return_labels=False):
-    if ds in ['income', 'breast-cancer', 'credit']:
+    if ds in SUPPORTED_DATASETS:
         dataset_factory = DatasetFactory()
         dataset = dataset_factory.load_dataset(ds)
         dataset.set_split('train')
@@ -158,15 +186,18 @@ def get_hybrid_train_data(ds, num_clients, overlap_frac=0.3,
                                                       overlap_frac, sample_frac, seed)
         return client_data, subspaces, client_idx
     
-def get_test_data(ds):
-    if ds in ['income', 'breast-cancer', 'credit', 'baf']:
+def get_test_data(ds, ignore_targets=False):
+    if ds in SUPPORTED_DATASETS:
         dataset_factory = DatasetFactory()
         dataset = dataset_factory.load_dataset(ds)
         dataset.set_split('test')
 
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
-        data = np.hstack((np_features, np_targets.reshape(-1, 1)))
+        if ignore_targets:
+            data = np_features
+        else:
+            data = np.hstack((np_features, np_targets.reshape(-1, 1)))
         return data
     elif ds == 'mnist':
         transform=torchvision.transforms.Compose([

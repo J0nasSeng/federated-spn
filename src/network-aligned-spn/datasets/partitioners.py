@@ -25,6 +25,11 @@ class BAFPartitioner(BasicPartitioner):
     num_classes = 2
     num_features = 30
 
+class SantanderPartitioner(BasicPartitioner):
+
+    num_classes = 2
+    num_features = 200
+
 class PartitionerFactory:
 
     def __init__(self):
@@ -33,7 +38,8 @@ class PartitionerFactory:
             'avazu': AvazuPartitioner,
             'breast-cancer': BreasCancerPartitioner,
             'credit': GimmeCreditPartitioner,
-            'baf': BAFPartitioner
+            'baf': BAFPartitioner,
+            'santander': SantanderPartitioner
         }
 
     def get_partitioner_cls(self, dataset):

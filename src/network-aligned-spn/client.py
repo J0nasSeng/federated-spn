@@ -25,14 +25,14 @@ import torchvision as tv
 from torchvision.transforms.functional import crop
 from det.tree import DensityTree
 
-n_gpus = 1 if torch.cuda.is_available() else 0
+n_gpus = 0.25 if torch.cuda.is_available() else 0
 @ray.remote(num_gpus=n_gpus)
 class EinetNode:
 
-    def __init__(self, dataset, num_epochs=10, num_classes=2, train_algo='em', device=-1) -> None:
+    def __init__(self, dataset, num_epochs=20, num_classes=2, train_algo='em', device=-1) -> None:
         self.dataset = dataset
         self.num_epochs = num_epochs
-        self.device = torch.device(f'cuda:{device}') if device > -1 else torch.device('cpu')
+        self.device = torch.device(f'cuda:0') if device > -1 else torch.device('cpu')
         self.losses = []
         self.einets = {}
         self.subspaces = []
@@ -52,11 +52,11 @@ class EinetNode:
             self._train_sgd()
 
     def _train_sgd(self):
-        for subspace, train_loader in self.subspaces:
-            einet_cfg = EinetConfig(len(subspace), num_classes=self.num_classes, 
+        self.config = EinetConfig(len(self.subspaces[0][0]), num_classes=self.num_classes, 
                                     leaf_type=RatNormal, leaf_kwargs={}, depth=4, num_leaves=20,
                                     num_sums=20, num_repetitions=10)
-            einet = Einet(einet_cfg).to(self.device)
+        for subspace, train_loader in self.subspaces:
+            einet = Einet(self.config).to(self.device)
             optim = torch.optim.SGD(einet.parameters(), 0.001)
             for epoch_count in range(self.num_epochs):
                 optim.zero_grad()
@@ -66,7 +66,6 @@ class EinetNode:
                     x = x.to(device=self.device, dtype=torch.float32)
                     y = y.to(device=self.device, dtype=torch.float32)
                     x_in = torch.cat((x, y.unsqueeze(1)), dim=1)
-                    x = x.unsqueeze(1)
                     outputs = einet(x_in)
                     loss = torch.mean(utils.log_likelihoods(outputs))
 
@@ -80,22 +79,23 @@ class EinetNode:
             self.einets[tuple(subspace)] = einet
 
     def _train_em(self):
-        for subspace, train_loader in self.subspaces:
-            config = Args(
-                len(subspace),
+        self.config = Args(
+                len(self.subspaces[0][0]),
                 1,
-                num_input_distributions=20,
-                num_sums=20,
+                num_input_distributions=40,
+                num_sums=40,
                 num_classes=self.num_classes,
                 exponential_family_args={
-                    'min_var': 1e-3,
+                    'min_var': 1e-6,
                     'max_var': 1.
                 },
                 online_em_frequency=5,
-                online_em_stepsize=0.01
+                online_em_stepsize=0.1
             )
+        for subspace, train_loader in self.subspaces:
             graph = random_binary_trees(len(subspace), 4, 10)
-            einet = EinsumNetwork(graph, config)
+            einet = EinsumNetwork(graph, self.config)
+            einet.config = self.config # make compatible with FC framework
             einet.initialize()
             einet = einet.to(self.device)
             for epoch_count in range(self.num_epochs):
@@ -108,9 +108,8 @@ class EinetNode:
                     x_in = torch.cat((x, y.unsqueeze(1)), dim=1)
                     x_in = x_in.unsqueeze(2)
                     x_in = x_in.to(self.device)
-
                     ll_sample = einet.forward(x_in)
-                    log_likelihood = ll_sample.sum()
+                    log_likelihood = ll_sample.mean()
                     log_likelihood.backward()
                     einet.em_process_batch()
                     total_ll += log_likelihood.item()
@@ -118,7 +117,7 @@ class EinetNode:
                 self.losses.append(total_ll / len(train_loader))
                 einet.em_update()
                 print(f"Epoch {epoch_count+1}/{self.num_epochs}: \t {total_ll / len(train_loader)}")
-            self.einets[tuple(subspace)] = einet
+            self.einets[tuple(subspace)] = einet.to('cpu')
 
 
     def assign_subset(self, subspace_with_data):
