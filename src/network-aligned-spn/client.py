@@ -376,6 +376,7 @@ class FlowNode:
                     subset = train_data[idx]
                     node_types = utils.infer_node_type(subset, 15)
                     types = [t for t, _ in node_types]
+                    print(context.ctxts.keys())
                     ctxt = Context(meta_types=[context.ctxts[self.dataset][i] for i in subspace])
                     #ctxt = Context(parametric_types=types)
                     ctxt.add_domains(subset)

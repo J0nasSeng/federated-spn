@@ -8,7 +8,7 @@ import torch
 from fedlab.utils.dataset import MNISTPartitioner
 from kmeans_pytorch import kmeans
 
-SUPPORTED_DATASETS = ['income', 'breast-cancer', 'credit', 'baf', 'santander']
+SUPPORTED_DATASETS = ['income', 'breast-cancer', 'credit', 'baf', 'santander', 'synthetic']
 
 def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2, ignore_targets=False, device=None, **ds_kwargs):
     if ds in SUPPORTED_DATASETS:
@@ -225,4 +225,3 @@ def make_data_loader(ds, batch_size=64):
         tds = TensorDataset(torch.from_numpy(x), torch.from_numpy(y))
         tdl = DataLoader(tds, batch_size=batch_size)
         return tdl
-    

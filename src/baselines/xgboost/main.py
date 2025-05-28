@@ -18,7 +18,7 @@ def save_results(args, acc, f1_micro, f1_macro):
     table_dict['f1_micro'].append(f1_micro)
     table_dict['f1_macro'].append(f1_macro)
     df = pd.DataFrame.from_dict(table_dict)
-    df.to_csv('./experiments.csv')
+    df.to_csv('./test.csv')
 
 def main(args):
     print(f"Learn XGBoost on {args.dataset}")

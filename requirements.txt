@@ -13,7 +13,6 @@ executing==1.2.0
 filelock==3.12.0
 flwr==1.4.0
 fonttools==4.39.4
-git+https://github.com/J0nasSeng/SPFlow-FedCircuits.git
 gpustat==1.1
 grpcio==1.54.2
 idna==3.4

@@ -138,22 +138,22 @@ class SPFlowServer:
             In hybrid setting, first the client SPNs which share the same feature
             space (scope) are put together in N mixtures, resulting in N new SPNs.
 
-            Then same as vertical case in which one Prodcut node is introduced
-            for each combinaion of clusters, followed by a mixture (root node)
+            Then same as vertical case in which one Product node is introduced
+            for each combination of clusters, followed by a mixture (root node)
             weighting the "combinatorial clusters".
         """
         leafs = []
         added_nodes = []
         for clients, subspace in feature_subspaces.items():
             if len(clients) > 1:
-                # in hybrid case multple clients can hold same subspace
+                # in hybrid case multiple clients can hold same subspace
                 client_spns = []
                 for c in clients:
                  # build mixture over common subspaces
                     spns = ray.get(nodes[c].get_spn.remote(tuple(subspace)))
                     client_spns.append(spns)
                 
-                num_spns = len(client_spns[0]) # number is same for all clients
+                num_spns = len(client_spns[0])  # number is same for all clients
                 joint_leafs = []
                 for i in range(num_spns):
                     spns = [cs[i] for cs in client_spns]
@@ -775,6 +775,8 @@ def main(args):
     for e in range(args.num_experiments):
         if args.model == 'spflow':
             acc, f1_micro, f1_macro, ll = main_spflow(args)
+
+            print(f'accuracy: {acc}\nf1 micro: {f1_micro}\nf1 macro: {f1_macro}\nll: {ll}')
         elif args.model == 'rf':
             acc, f1_micro, f1_macro, ll = main_rf(args)
         elif args.model == 'einsum':
@@ -794,7 +796,7 @@ def main(args):
         table_dict['dir_alpha'].append(args.dir_alpha)
         table_dict['ll'].append(ll)
     df = pd.DataFrame.from_dict(table_dict)
-    df.to_csv('./experiments.csv')
+    df.to_csv('./test.csv')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--setting', default='horizontal')

@@ -206,7 +206,43 @@ class Income(TabularDataset):
         y_valid = torch.from_numpy(y_valid.to_numpy())
         y_test = torch.from_numpy(y_test.to_numpy())
         return X_train, X_valid, X_test, y_train, y_valid, y_test
-    
+
+
+class SyntheticDataset(TabularDataset):
+
+    def __init__(self, path) -> None:
+        super().__init__()
+        self.name = 'synthetic'
+        self.train_data = pd.read_csv(path)
+        self.test_data = pd.read_csv(path)
+        self.X_train, self.X_valid, self.X_test, self.y_train, self.y_valid, self.y_test = self._preprocess()
+
+    def __len__(self):
+        return len(self.features)
+
+    def __getitem__(self, index):
+        x = self.features[index]
+        y = self.targets[index]
+        return torch.hstack([x, y.unsqueeze(0)])
+
+    def _preprocess(self):
+        X = self.train_data.drop(['y'], axis=1)
+        y = self.train_data['y']
+        X_test = self.test_data.drop(['y'], axis=1)
+        y_test = self.test_data['y']
+        X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=0.3, random_state=42)
+        sc = StandardScaler()
+        X_train = sc.fit_transform(X_train)
+        X_valid = sc.transform(X_valid)
+        X_test = sc.transform(X_test)
+
+        X_train = torch.from_numpy(X_train)
+        X_valid = torch.from_numpy(X_valid)
+        X_test = torch.from_numpy(X_test)
+        y_train = torch.from_numpy(y_train.to_numpy())
+        y_valid = torch.from_numpy(y_valid.to_numpy())
+        y_test = torch.from_numpy(y_test.to_numpy())
+        return X_train, X_valid, X_test, y_train, y_valid, y_test
 
 class BAFDataset(TabularDataset):
 
@@ -411,8 +447,9 @@ class DatasetFactory:
             dataset = BAFDataset('../../datasets/BAF/', **ds_kwargs)
         elif ds == 'santander':
             dataset = SantanderDataset('../../datasets/santander', **ds_kwargs)
+        elif ds == 'synthetic':
+            dataset = SyntheticDataset('datasets/test.csv')
         self.loaded_datasets[ds] = dataset
-        
         return dataset
     
     
