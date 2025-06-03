@@ -14,6 +14,7 @@ from rtpt import RTPT
 import pandas as pd
 from pathlib import Path
 
+
 log_format = "%(asctime)s %(message)s"
 logging.basicConfig(
     stream=sys.stdout,
@@ -31,7 +32,7 @@ def init_spn(device, num_vars, num_dims, use_em=True, num_classes=1):
 
     In case of poon-domingos the image is split into smaller hypercubes (i.e. a set of
     neighbored pixels) where each pixel is a random variable. These hypercubes are split further
-    until we operate on pixel-level. The spplitting is done randomly. For more information
+    until we operate on pixel-level. The splitting is done randomly. For more information
     refer to the link above.
     """
 

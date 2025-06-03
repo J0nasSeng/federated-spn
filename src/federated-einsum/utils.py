@@ -3,8 +3,6 @@ import numpy as np
 from torchvision.datasets import ImageNet
 from torchvision.models import ViT_L_16_Weights
 from kmeans_pytorch import kmeans
-import math
-import torch.nn.functional as F
 from PIL import Image
 import os
 import errno
