@@ -20,7 +20,9 @@ class FactorizedLeafLayer(Layer):
     computation) together in forward(...).
     """
 
-    def __init__(self, leaves, num_var, num_dims, exponential_family, ef_args, use_em=True):
+    def __init__(
+        self, leaves, num_var, num_dims, exponential_family, ef_args, use_em=True
+    ):
         """
         :param leaves: list of PC leaves (DistributionVector, see Graph.py)
         :param num_var: number of random variables (int)
@@ -37,23 +39,31 @@ class FactorizedLeafLayer(Layer):
 
         num_dist = list(set([n.num_dist for n in self.nodes]))
         if len(num_dist) != 1:
-            raise AssertionError("All leaves must have the same number of distributions.")
+            raise AssertionError(
+                "All leaves must have the same number of distributions."
+            )
         num_dist = num_dist[0]
 
         replica_indices = set([n.einet_address.replica_idx for n in self.nodes])
         print(replica_indices)
         if sorted(list(replica_indices)) != list(range(len(replica_indices))):
-            raise AssertionError("Replica indices should be consecutive, starting with 0.")
+            raise AssertionError(
+                "Replica indices should be consecutive, starting with 0."
+            )
         num_replica = len(replica_indices)
 
         # this computes an array of (batch, num_var, num_dist, num_repetition) exponential family densities
         # see ExponentialFamilyArray
-        self.ef_array = exponential_family(num_var, num_dims, (num_dist, num_replica), use_em=use_em, **ef_args)
+        self.ef_array = exponential_family(
+            num_var, num_dims, (num_dist, num_replica), use_em=use_em, **ef_args
+        )
 
         # self.scope_tensor indicates which densities in self.ef_array belongs to which leaf.
         # TODO: it might be smart to have a sparse implementation -- I have experimented a bit with this, but it is not
         # always faster.
-        self.register_buffer('scope_tensor', torch.zeros((num_var, num_replica, len(self.nodes))))
+        self.register_buffer(
+            "scope_tensor", torch.zeros((num_var, num_replica, len(self.nodes)))
+        )
         for c, node in enumerate(self.nodes):
             self.scope_tensor[node.scope, node.einet_address.replica_idx, c] = 1.0
             node.einet_address.layer = self
@@ -88,7 +98,7 @@ class FactorizedLeafLayer(Layer):
                  Will be of shape (batch_size, num_dist, len(self.nodes))
                  Note: num_dist is K in the paper, len(self.nodes) is the number of PC leaves
         """
-        self.prob = torch.einsum('bxir,xro->bio', self.ef_array(x), self.scope_tensor)
+        self.prob = torch.einsum("bxir,xro->bio", self.ef_array(x), self.scope_tensor)
 
     def forward_discretized(self, x=None):
         """
@@ -110,9 +120,11 @@ class FactorizedLeafLayer(Layer):
                  Will be of shape (batch_size, num_dist, len(self.nodes))
                  Note: num_dist is K in the paper, len(self.nodes) is the number of PC leaves
         """
-        self.prob = torch.einsum('bxir,xro->bio', self.ef_array.forward_discretized(x), self.scope_tensor)
+        self.prob = torch.einsum(
+            "bxir,xro->bio", self.ef_array.forward_discretized(x), self.scope_tensor
+        )
 
-    def backtrack(self, dist_idx, node_idx, mode='sample', **kwargs):
+    def backtrack(self, dist_idx, node_idx, mode="sample", **kwargs):
         """
         Backtrackng mechanism for EiNets.
 
@@ -127,28 +139,41 @@ class FactorizedLeafLayer(Layer):
 
         with torch.no_grad():
             N = len(dist_idx)
-            if mode == 'sample':
+            if mode == "sample":
                 ef_values = self.ef_array.sample(N, **kwargs)
-            elif mode == 'argmax':
+            elif mode == "argmax":
                 ef_values = self.ef_array.argmax(**kwargs)
             else:
-                raise AssertionError('Unknown backtracking mode {}'.format(mode))
+                raise AssertionError("Unknown backtracking mode {}".format(mode))
 
-            values = torch.zeros((N, self.num_var, self.num_dims), device=ef_values.device, dtype=ef_values.dtype)
+            values = torch.zeros(
+                (N, self.num_var, self.num_dims),
+                device=ef_values.device,
+                dtype=ef_values.dtype,
+            )
 
             for n in range(N):
-                cur_value = torch.zeros(self.num_var, self.num_dims, device=ef_values.device, dtype=ef_values.dtype)
+                cur_value = torch.zeros(
+                    self.num_var,
+                    self.num_dims,
+                    device=ef_values.device,
+                    dtype=ef_values.dtype,
+                )
                 if len(dist_idx[n]) != len(node_idx[n]):
                     raise AssertionError("Invalid input.")
                 for c, k in enumerate(node_idx[n]):
                     scope = list(self.nodes[k].scope)
                     rep = self.nodes[k].einet_address.replica_idx
-                    if mode == 'sample':
-                        cur_value[scope, :] = ef_values[n, scope, :, dist_idx[n][c], rep]
-                    elif mode == 'argmax':
+                    if mode == "sample":
+                        cur_value[scope, :] = ef_values[
+                            n, scope, :, dist_idx[n][c], rep
+                        ]
+                    elif mode == "argmax":
                         cur_value[scope, :] = ef_values[scope, :, dist_idx[n][c], rep]
                     else:
-                        raise AssertionError('Unknown backtracking mode {}'.format(mode))
+                        raise AssertionError(
+                            "Unknown backtracking mode {}".format(mode)
+                        )
                 values[n, :, :] = cur_value
 
             return values

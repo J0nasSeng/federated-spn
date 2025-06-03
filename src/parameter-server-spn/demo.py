@@ -7,22 +7,22 @@ import utils
 import config
 from torch.utils.data import DataLoader
 
-device = torch.device(f'cuda:{1}')
+device = torch.device(f"cuda:{1}")
 
 demo_text = """
-This demo loads (fashion) mnist and quickly trains an EiNet for some epochs. 
+This demo loads (fashion) mnist and quickly trains an EiNet for some epochs.
 
-There are some parameters to play with, as for example which exponential family you want 
-to use, which classes you want to pick, and structural parameters. Then an EiNet is trained, 
+There are some parameters to play with, as for example which exponential family you want
+to use, which classes you want to pick, and structural parameters. Then an EiNet is trained,
 the log-likelihoods reported, some (conditional and unconditional) samples are produced, and
-approximate MPE reconstructions are generated. 
+approximate MPE reconstructions are generated.
 """
 print(demo_text)
 
 ############################################################################
 fashion_mnist = False
 
-#exponential_family = EinsumNetwork.BinomialArray
+# exponential_family = EinsumNetwork.BinomialArray
 # exponential_family = EinsumNetwork.CategoricalArray
 exponential_family = EinsumNetwork.NormalArray
 
@@ -32,7 +32,7 @@ classes = [7]
 
 K = 40
 
-structure = 'poon-domingos'
+structure = "poon-domingos"
 # structure = 'binary-trees'
 
 # 'poon-domingos'
@@ -54,14 +54,16 @@ online_em_stepsize = 0.5
 
 exponential_family_args = None
 if exponential_family == EinsumNetwork.BinomialArray:
-    exponential_family_args = {'N': 255}
+    exponential_family_args = {"N": 255}
 if exponential_family == EinsumNetwork.CategoricalArray:
-    exponential_family_args = {'K': 256}
+    exponential_family_args = {"K": 256}
 if exponential_family == EinsumNetwork.NormalArray:
-    exponential_family_args = {'min_var': 1e-6, 'max_var': 0.01}
+    exponential_family_args = {"min_var": 1e-6, "max_var": 0.01}
 
 # get data
-data = datasets.get_dataset_loader('svhn', 1, config.dataset_inds_file, config.data_skew)
+data = datasets.get_dataset_loader(
+    "svhn", 1, config.dataset_inds_file, config.data_skew
+)
 train_data, val_data = data.load_client_data(0)
 train_loader, val_loader = DataLoader(train_data, 32), DataLoader(val_data, 32)
 
@@ -70,15 +72,16 @@ train_loader, val_loader = DataLoader(train_data, 32), DataLoader(val_data, 32)
 pd_delta = [[height / d, width / d] for d in pd_num_pieces]
 graph = Graph.poon_domingos_structure(shape=(height, width), axes=[1], delta=[8])
 args = EinsumNetwork.Args(
-        num_var=32*32,
-        num_dims=3,
-        num_classes=1,
-        num_sums=K,
-        num_input_distributions=K,
-        exponential_family=exponential_family,
-        exponential_family_args=exponential_family_args,
-        online_em_frequency=online_em_frequency,
-        online_em_stepsize=online_em_stepsize)
+    num_var=32 * 32,
+    num_dims=3,
+    num_classes=1,
+    num_sums=K,
+    num_input_distributions=K,
+    exponential_family=exponential_family,
+    exponential_family_args=exponential_family_args,
+    online_em_frequency=online_em_frequency,
+    online_em_stepsize=online_em_stepsize,
+)
 
 einet = EinsumNetwork.EinsumNetwork(graph, args)
 einet.initialize()
@@ -94,11 +97,11 @@ valid_N = len(val_data)
 for epoch_count in range(num_epochs):
 
     ##### evaluate
-    #einet.eval()
-    #train_ll = EinsumNetwork.eval_loglikelihood_batched(einet, train_x, batch_size=batch_size)
-    #valid_ll = EinsumNetwork.eval_loglikelihood_batched(einet, valid_x, batch_size=batch_size)
-    #test_ll = EinsumNetwork.eval_loglikelihood_batched(einet, test_x, batch_size=batch_size)
-    #print("[{}]   train LL {}   valid LL {}   test LL {}".format(
+    # einet.eval()
+    # train_ll = EinsumNetwork.eval_loglikelihood_batched(einet, train_x, batch_size=batch_size)
+    # valid_ll = EinsumNetwork.eval_loglikelihood_batched(einet, valid_x, batch_size=batch_size)
+    # test_ll = EinsumNetwork.eval_loglikelihood_batched(einet, test_x, batch_size=batch_size)
+    # print("[{}]   train LL {}   valid LL {}   test LL {}".format(
     #    epoch_count,
     #    train_ll / train_N,
     #    valid_ll / valid_N,
@@ -110,7 +113,7 @@ for epoch_count in range(num_epochs):
     for x, y in train_loader:
         idx = torch.argwhere(y == 0)
         x = x[idx]
-        batch_x = x.reshape((-1, 32*32, 3)).to(device)
+        batch_x = x.reshape((-1, 32 * 32, 3)).to(device)
         outputs = einet.forward(batch_x)
         ll_sample = EinsumNetwork.log_likelihoods(outputs)
         log_likelihood = ll_sample.sum()
@@ -121,8 +124,8 @@ for epoch_count in range(num_epochs):
 
     einet.em_update()
 
-model_dir = '../models/einet/demo_svhn/'
-samples_dir = '../samples/demo_svhn/'
+model_dir = "../models/einet/demo_svhn/"
+samples_dir = "../samples/demo_svhn/"
 utils.mkdir_p(model_dir)
 utils.mkdir_p(samples_dir)
 
@@ -132,4 +135,6 @@ utils.mkdir_p(samples_dir)
 
 samples = einet.sample(num_samples=25).cpu().numpy()
 samples = samples.reshape((-1, 32, 32, 3))
-utils.save_image_stack(samples, 5, 5, os.path.join(samples_dir, "samples.png"), margin_gray_val=0.)
+utils.save_image_stack(
+    samples, 5, 5, os.path.join(samples_dir, "samples.png"), margin_gray_val=0.0
+)

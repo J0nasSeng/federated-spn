@@ -33,8 +33,12 @@ class MultivariateNormal(AbstractLeaf):
 
         """
         # TODO: Fix for num_repetitions
-        super().__init__(in_features, out_channels, num_repetitions, dropout, cardinality)
-        raise NotImplementedError("MultivariateNormal has not been adapted to the new implementation yet - sorry.")
+        super().__init__(
+            in_features, out_channels, num_repetitions, dropout, cardinality
+        )
+        raise NotImplementedError(
+            "MultivariateNormal has not been adapted to the new implementation yet - sorry."
+        )
         self._pad_value = in_features % cardinality
         self.out_features = np.ceil(in_features / cardinality).astype(int)
         self._n_dists = np.ceil(in_features / cardinality).astype(int)
@@ -43,11 +47,19 @@ class MultivariateNormal(AbstractLeaf):
         self.max_sigma = check_valid(max_sigma, float, min_sigma)
 
         # Create gaussian means and covs
-        self.means = nn.Parameter(torch.randn(out_channels * self._n_dists * self.num_repetitions, cardinality))
+        self.means = nn.Parameter(
+            torch.randn(
+                out_channels * self._n_dists * self.num_repetitions, cardinality
+            )
+        )
 
         # Generate covariance matrix via the cholesky decomposition: s = A'A where A is a triangular matrix
         # Further ensure, that diag(a) > 0 everywhere, such that A has full rank
-        rand = torch.zeros(out_channels * self._n_dists * self.num_repetitions, cardinality, cardinality)
+        rand = torch.zeros(
+            out_channels * self._n_dists * self.num_repetitions,
+            cardinality,
+            cardinality,
+        )
 
         for i in range(cardinality):
             rand[:, i, i] = 1.0
@@ -56,7 +68,11 @@ class MultivariateNormal(AbstractLeaf):
 
         # Make matrices triangular and remove diagonal entries
         cov_tril_wo_diag = rand.tril(diagonal=-1)
-        cov_tril_wi_diag = torch.rand(out_channels * self._n_dists * self.num_repetitions, cardinality, cardinality)
+        cov_tril_wi_diag = torch.rand(
+            out_channels * self._n_dists * self.num_repetitions,
+            cardinality,
+            cardinality,
+        )
 
         self.cov_tril_wo_diag = nn.Parameter(cov_tril_wo_diag)
         self.cov_tril_wi_diag = nn.Parameter(cov_tril_wi_diag)
@@ -78,21 +94,29 @@ class MultivariateNormal(AbstractLeaf):
         x = x.unsqueeze(1)
 
         # Split features into groups
-        x = x.view(batch_size, 1, 1, self._n_dists, self.cardinality)  # [n, 1, 1, d/k, k]
+        x = x.view(
+            batch_size, 1, 1, self._n_dists, self.cardinality
+        )  # [n, 1, 1, d/k, k]
 
         # Repeat groups by number of output_channels and number of repetitions
-        x = x.repeat(1, self.num_repetitions, self.num_leaves, 1, 1)  #  [n, r, oc, d/k, k]
+        x = x.repeat(
+            1, self.num_repetitions, self.num_leaves, 1, 1
+        )  #  [n, r, oc, d/k, k]
 
         # Merge groups and repetitions
         x = x.view(
-            batch_size, self.num_repetitions * self.num_leaves * self._n_dists, self.cardinality
+            batch_size,
+            self.num_repetitions * self.num_leaves * self._n_dists,
+            self.cardinality,
         )  #  [n, r * d/k * oc, k]
 
         # Compute multivariate gaussians
         # Output shape: [n, out_channels, d / cardinality]
         mv = self._get_base_distribution()
         x = mv.log_prob(x)  #  [n, r * d/k * oc]
-        x = x.view(batch_size, self.num_repetitions, self.num_leaves, self._n_dists)  # [n, r, oc, d/k]
+        x = x.view(
+            batch_size, self.num_repetitions, self.num_leaves, self._n_dists
+        )  # [n, r, oc, d/k]
         x = x.permute(0, 3, 2, 1)  # [n, d/k, oc, r]
 
         # Marginalize and apply dropout
@@ -101,7 +125,9 @@ class MultivariateNormal(AbstractLeaf):
 
         return x
 
-    def sample(self, num_samples: int = None, context: SamplingContext = None) -> torch.Tensor:
+    def sample(
+        self, num_samples: int = None, context: SamplingContext = None
+    ) -> torch.Tensor:
         mv = self._get_base_distribution()
 
         # Sample from the specified distribution

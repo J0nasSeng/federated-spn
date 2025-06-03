@@ -32,7 +32,13 @@ class EinetMixture:
         samples = np.zeros((N, self.num_var, self.num_dims))
         for k in range(N):
             rand_idx = np.sum(np.random.rand() > np.cumsum(self.p[0:-1]))
-            s = self.einets[rand_idx].sample(num_samples=1, **kwargs).squeeze().cpu().numpy()
+            s = (
+                self.einets[rand_idx]
+                .sample(num_samples=1, **kwargs)
+                .squeeze()
+                .cpu()
+                .numpy()
+            )
             samples[k, ...] = s
         return samples
 
@@ -44,15 +50,21 @@ class EinetMixture:
             einet.set_marginalization_idx(marginalize_idx)
             lls = einet.forward(x)
             lls = lls.sum(1)
-            component_posterior[einet_counter, :] = lls.detach().cpu().numpy() + np.log(self.p[einet_counter])
+            component_posterior[einet_counter, :] = lls.detach().cpu().numpy() + np.log(
+                self.p[einet_counter]
+            )
 
-        component_posterior = component_posterior - logsumexp(component_posterior, 0, keepdims=True)
+        component_posterior = component_posterior - logsumexp(
+            component_posterior, 0, keepdims=True
+        )
         component_posterior = np.exp(component_posterior)
 
         samples = np.zeros((x.shape[0], self.num_var, self.num_dims))
         for test_idx in range(x.shape[0]):
             component_idx = np.argmax(component_posterior[:, test_idx])
-            sample = self.einets[component_idx].sample(x=x[test_idx:test_idx + 1, :], **kwargs)
+            sample = self.einets[component_idx].sample(
+                x=x[test_idx : test_idx + 1, :], **kwargs
+            )
             samples[test_idx, ...] = sample.squeeze().cpu().numpy()
 
         # restore the original marginalization indices
@@ -63,7 +75,9 @@ class EinetMixture:
 
     def log_likelihood(self, x, labels=None, batch_size=100):
         with torch.no_grad():
-            idx_batches = torch.arange(0, x.shape[0], dtype=torch.int64, device=x.device).split(batch_size)
+            idx_batches = torch.arange(
+                0, x.shape[0], dtype=torch.int64, device=x.device
+            ).split(batch_size)
             ll_total = 0.0
             for batch_count, idx in enumerate(idx_batches):
                 batch_x = x[idx, :]
@@ -75,7 +89,9 @@ class EinetMixture:
                 lls = torch.zeros(len(idx), self.num_components, device=x.device)
                 for einet_count, einet in enumerate(self.einets):
                     outputs = einet(batch_x)
-                    lls[:, einet_count] = log_likelihoods(outputs, labels=batch_labels).squeeze()
+                    lls[:, einet_count] = log_likelihoods(
+                        outputs, labels=batch_labels
+                    ).squeeze()
                     lls[:, einet_count] -= torch.log(torch.tensor(self.p[einet_count]))
                 lls = torch.logsumexp(lls, dim=1)
                 ll_total += lls.sum().item()

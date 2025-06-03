@@ -8,23 +8,46 @@ import torch
 from fedlab.utils.dataset import MNISTPartitioner
 from kmeans_pytorch import kmeans
 
-SUPPORTED_DATASETS = ['income', 'breast-cancer', 'credit', 'baf', 'santander', 'synthetic']
+SUPPORTED_DATASETS = [
+    "income",
+    "breast-cancer",
+    "credit",
+    "baf",
+    "santander",
+    "synthetic",
+]
 
-def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2, ignore_targets=False, device=None, **ds_kwargs):
+
+def get_horizontal_train_data(
+    ds,
+    num_clients,
+    partitioning="iid",
+    dir_alpha=0.2,
+    ignore_targets=False,
+    device=None,
+    **ds_kwargs
+):
     if ds in SUPPORTED_DATASETS:
         dataset_factory = DatasetFactory()
         dataset = dataset_factory.load_dataset(ds, **ds_kwargs)
-        dataset.set_split('train')
-        if partitioning != 'cluster':
+        dataset.set_split("train")
+        if partitioning != "cluster":
             partitioner_factory = PartitionerFactory()
             Partitioner_cls = partitioner_factory.get_partitioner_cls(dataset)
-            partitioner = Partitioner_cls(dataset.targets, num_clients, partition=partitioning, dir_alpha=dir_alpha)
+            partitioner = Partitioner_cls(
+                dataset.targets,
+                num_clients,
+                partition=partitioning,
+                dir_alpha=dir_alpha,
+            )
             np_features = dataset.features.numpy()
             np_targets = dataset.targets.numpy()
         else:
             if num_clients > 1:
-                cluster_device = device if device is not None else torch.device('cpu')
-                cluster_ids, cluster_centers = kmeans(dataset.features, num_clients, device=cluster_device, tol=0.007)
+                cluster_device = device if device is not None else torch.device("cpu")
+                cluster_ids, cluster_centers = kmeans(
+                    dataset.features, num_clients, device=cluster_device, tol=0.007
+                )
                 data = []
                 cluster_ids = cluster_ids.cpu()
                 for cid in torch.unique(cluster_ids):
@@ -34,7 +57,9 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
                     if ignore_targets:
                         data.append(client_features)
                     else:
-                        data.append(np.hstack((np_features, client_targets.reshape(-1, 1))))
+                        data.append(
+                            np.hstack((np_features, client_targets.reshape(-1, 1)))
+                        )
                 return data
             else:
                 np_features = dataset.features.numpy()
@@ -42,22 +67,24 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
                 if ignore_targets:
                     return [np_features]
                 else:
-                    return [np.hstack((np_features, np_targets.reshape(.1, 1)))]
+                    return [np.hstack((np_features, np_targets.reshape(0.1, 1)))]
         if ignore_targets:
             data = np_features
         else:
             data = np.hstack((np_features, np_targets.reshape(-1, 1)))
-    elif ds == 'mnist':
-        transform=torchvision.transforms.Compose([
-                               torchvision.transforms.ToTensor(),
-                               torchvision.transforms.Normalize(
-                                 (0.1307,), (0.3081,)),
-                             ])
-        dataset = MNIST('../../datasets/', True, transform=transform, download=True)
-        partitioner = MNISTPartitioner(dataset.targets, num_clients, 
-                                       partition=partitioning, dir_alpha=dir_alpha)
-        imgs = dataset.data.reshape((-1, 28*28)).numpy().astype(np.float64)
-        imgs /= 255.
+    elif ds == "mnist":
+        transform = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+            ]
+        )
+        dataset = MNIST("../../datasets/", True, transform=transform, download=True)
+        partitioner = MNISTPartitioner(
+            dataset.targets, num_clients, partition=partitioning, dir_alpha=dir_alpha
+        )
+        imgs = dataset.data.reshape((-1, 28 * 28)).numpy().astype(np.float64)
+        imgs /= 255.0
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets)).astype(np.float64)
 
@@ -66,12 +93,13 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
         partitioned_data.append(data[idx])
     return partitioned_data
 
+
 def get_vertical_train_data(ds, num_clients, rand_perm=True, return_labels=False):
-    
+
     if ds in SUPPORTED_DATASETS:
         dataset_factory = DatasetFactory()
         dataset = dataset_factory.load_dataset(ds)
-        dataset.set_split('train')
+        dataset.set_split("train")
 
         features = dataset.features.numpy()
         targets = dataset.targets.numpy()
@@ -91,40 +119,42 @@ def get_vertical_train_data(ds, num_clients, rand_perm=True, return_labels=False
         else:
             return client_data, split_cols, targets
 
-    elif ds == 'mnist':
-        columns = (28*28) + 1
+    elif ds == "mnist":
+        columns = (28 * 28) + 1
         if np.floor(columns / num_clients) < 3:
             raise ValueError("'num_clients' too high")
         cols = np.arange(columns)
         cols = np.random.permutation(cols)
         split_cols = np.array_split(cols, num_clients)
-        transform=torchvision.transforms.Compose([
-                               torchvision.transforms.ToTensor(),
-                               torchvision.transforms.Normalize(
-                                 (0.1307,), (0.3081,)),
-                             ])
-        dataset = MNIST('../../datasets/', True, transform=transform, download=True)
-        imgs = dataset.data.reshape((-1, 28*28)).numpy().astype(np.float64)
-        imgs /= 255.
+        transform = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+            ]
+        )
+        dataset = MNIST("../../datasets/", True, transform=transform, download=True)
+        imgs = dataset.data.reshape((-1, 28 * 28)).numpy().astype(np.float64)
+        imgs /= 255.0
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets)).astype(np.float64)
         client_data = [data[:, s] for s in split_cols]
         return client_data, split_cols
-    
+
+
 def split_dataset_hybrid(data, num_clients, num_cols, overlap_frac, sample_frac, seed):
-    sample_frac = 1/num_clients if sample_frac is None else sample_frac
-    #np.random.seed(seed)
+    sample_frac = 1 / num_clients if sample_frac is None else sample_frac
+    # np.random.seed(seed)
     cols_per_client = int(num_cols / num_clients)
     client_to_col = []
     for client_id in range(num_clients):
         client_to_col += [client_id] * cols_per_client
-    
+
     if len(client_to_col) < num_cols:
         num_missing = num_cols - len(client_to_col)
         # randomly sample clients to add
         client_ids = np.random.choice(list(range(num_clients)), num_missing)
         client_to_col += list(client_ids)
-    
+
     rand_assignment = np.random.permutation(client_to_col)
     client_col_assignment = {}
     for cid in range(num_clients):
@@ -134,7 +164,7 @@ def split_dataset_hybrid(data, num_clients, num_cols, overlap_frac, sample_frac,
     client_data = []
     idx = np.arange(data.shape[0])
     idx = np.random.permutation(idx)
-    client_overlap = np.random.choice(idx, int(overlap_frac*len(idx)))
+    client_overlap = np.random.choice(idx, int(overlap_frac * len(idx)))
     client_indices = []
     for c in range(num_clients):
         subspace = np.array(client_cols[c])
@@ -147,13 +177,15 @@ def split_dataset_hybrid(data, num_clients, num_cols, overlap_frac, sample_frac,
         client_data.append(c_data)
         client_indices.append((client_idx, client_idx_client_view))
     return client_data, client_cols, client_indices
-    
-def get_hybrid_train_data(ds, num_clients, overlap_frac=0.3,
-                          sample_frac=None, seed=111, return_labels=False):
+
+
+def get_hybrid_train_data(
+    ds, num_clients, overlap_frac=0.3, sample_frac=None, seed=111, return_labels=False
+):
     if ds in SUPPORTED_DATASETS:
         dataset_factory = DatasetFactory()
         dataset = dataset_factory.load_dataset(ds)
-        dataset.set_split('train')
+        dataset.set_split("train")
 
         features = dataset.features.numpy()
         targets = dataset.targets.numpy()
@@ -161,36 +193,40 @@ def get_hybrid_train_data(ds, num_clients, overlap_frac=0.3,
             data = np.hstack([features, targets.reshape(-1, 1)])
         else:
             data = features
-        client_data, subspaces, client_idx = split_dataset_hybrid(data, num_clients, data.shape[1], 
-                                                      overlap_frac, sample_frac, seed)
+        client_data, subspaces, client_idx = split_dataset_hybrid(
+            data, num_clients, data.shape[1], overlap_frac, sample_frac, seed
+        )
         if not return_labels:
             return client_data, subspaces, client_idx
         else:
             return client_data, subspaces, client_idx, targets
 
-    elif ds == 'mnist':
-        columns = (28*28) + 1
+    elif ds == "mnist":
+        columns = (28 * 28) + 1
         if np.floor(columns / num_clients) < 3:
             raise ValueError("'num_clients' too high")
-        transform=torchvision.transforms.Compose([
-                               torchvision.transforms.ToTensor(),
-                               torchvision.transforms.Normalize(
-                                 (0.1307,), (0.3081,)),
-                             ])
-        dataset = MNIST('../../datasets/', True, transform=transform, download=True)
-        imgs = dataset.data.reshape((-1, 28*28)).numpy().astype(np.float64)
-        imgs /= 255.
+        transform = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+            ]
+        )
+        dataset = MNIST("../../datasets/", True, transform=transform, download=True)
+        imgs = dataset.data.reshape((-1, 28 * 28)).numpy().astype(np.float64)
+        imgs /= 255.0
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets)).astype(np.float64)
-        client_data, subspaces, client_idx = split_dataset_hybrid(data, num_clients, columns, 
-                                                      overlap_frac, sample_frac, seed)
+        client_data, subspaces, client_idx = split_dataset_hybrid(
+            data, num_clients, columns, overlap_frac, sample_frac, seed
+        )
         return client_data, subspaces, client_idx
-    
+
+
 def get_test_data(ds, ignore_targets=False):
     if ds in SUPPORTED_DATASETS:
         dataset_factory = DatasetFactory()
         dataset = dataset_factory.load_dataset(ds)
-        dataset.set_split('test')
+        dataset.set_split("test")
 
         np_features = dataset.features.numpy()
         np_targets = dataset.targets.numpy()
@@ -199,29 +235,31 @@ def get_test_data(ds, ignore_targets=False):
         else:
             data = np.hstack((np_features, np_targets.reshape(-1, 1)))
         return data
-    elif ds == 'mnist':
-        transform=torchvision.transforms.Compose([
-                               torchvision.transforms.ToTensor(),
-                               torchvision.transforms.Normalize(
-                                 (0.1307,), (0.3081,)),
-                             ])
-        dataset = MNIST('../../datasets/', False, transform=transform, download=True)
-        imgs = dataset.data.reshape((-1, 28*28)).numpy()
+    elif ds == "mnist":
+        transform = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+            ]
+        )
+        dataset = MNIST("../../datasets/", False, transform=transform, download=True)
+        imgs = dataset.data.reshape((-1, 28 * 28)).numpy()
         targets = dataset.targets.reshape((-1, 1)).numpy()
         data = np.hstack((imgs, targets))
         return data
-    
+
+
 def make_data_loader(ds, batch_size=64):
     if type(ds) is list:
         data_loaders = []
         for d in ds:
-            x, y = d[...,:-1], d[...,-1]
+            x, y = d[..., :-1], d[..., -1]
             tds = TensorDataset(torch.from_numpy(x), torch.from_numpy(y))
             tdl = DataLoader(tds, batch_size=batch_size)
             data_loaders.append(tdl)
         return data_loaders
     else:
-        x, y = ds[...,:-1], ds[...,-1]
+        x, y = ds[..., :-1], ds[..., -1]
         tds = TensorDataset(torch.from_numpy(x), torch.from_numpy(y))
         tdl = DataLoader(tds, batch_size=batch_size)
         return tdl

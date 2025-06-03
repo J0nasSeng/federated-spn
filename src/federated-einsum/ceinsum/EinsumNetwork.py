@@ -4,6 +4,7 @@ from ceinsum.SumLayer import *
 from utils import extract_image_patches, get_surrounding_patches
 import config
 
+
 class Args(object):
     """
     Arguments for EinsumNetwork class.
@@ -21,17 +22,20 @@ class Args(object):
                          batch EM. In the latter case, EM updates must be triggered manually after each epoch.
     online_em_stepsize: stepsize for inline EM. Only relevant if online_em_frequency not is None.
     """
-    def __init__(self,
-                 num_var=20,
-                 num_dims=1,
-                 num_input_distributions=10,
-                 num_sums=10,
-                 num_classes=1,
-                 exponential_family=NormalArray,
-                 exponential_family_args=None,
-                 use_em=True,
-                 online_em_frequency=1,
-                 online_em_stepsize=0.05):
+
+    def __init__(
+        self,
+        num_var=20,
+        num_dims=1,
+        num_input_distributions=10,
+        num_sums=10,
+        num_classes=1,
+        exponential_family=NormalArray,
+        exponential_family_args=None,
+        use_em=True,
+        online_em_frequency=1,
+        online_em_stepsize=0.05,
+    ):
         self.num_var = num_var
         self.num_dims = num_dims
         self.num_input_distributions = num_input_distributions
@@ -71,7 +75,7 @@ class EinsumNetwork(torch.nn.Module):
         """Make an EinsumNetwork."""
         super(EinsumNetwork, self).__init__()
 
-        self.px, self.py  = patch_size
+        self.px, self.py = patch_size
         self.param_nn = param_nn
         self.last_params = None
         check_flag, check_msg = Graph.check_graph(graph)
@@ -82,7 +86,9 @@ class EinsumNetwork(torch.nn.Module):
         self.args = args if args is not None else Args()
 
         if len(Graph.get_roots(self.graph)) != 1:
-            raise AssertionError("Currently only EinNets with single root node supported.")
+            raise AssertionError(
+                "Currently only EinNets with single root node supported."
+            )
 
         root = Graph.get_roots(self.graph)[0]
         if tuple(range(self.args.num_var)) != root.scope:
@@ -101,25 +107,39 @@ class EinsumNetwork(torch.nn.Module):
         self.graph_layers = Graph.topological_layers(self.graph)
 
         # input layer
-        einet_layers = [FactorizedLeafLayer(self.graph_layers[0],
-                                            self.args.num_var,
-                                            self.args.num_dims,
-                                            self.args.exponential_family,
-                                            self.args.exponential_family_args,
-                                            use_em=self.args.use_em)]
+        einet_layers = [
+            FactorizedLeafLayer(
+                self.graph_layers[0],
+                self.args.num_var,
+                self.args.num_dims,
+                self.args.exponential_family,
+                self.args.exponential_family_args,
+                use_em=self.args.use_em,
+            )
+        ]
 
         # internal layers
         for c, layer in enumerate(self.graph_layers[1:]):
-            if c % 2 == 0:   # product layer
-                einet_layers.append(EinsumLayer(self.graph, layer, einet_layers, use_em=self.args.use_em))
-            else:     # sum layer
+            if c % 2 == 0:  # product layer
+                einet_layers.append(
+                    EinsumLayer(
+                        self.graph, layer, einet_layers, use_em=self.args.use_em
+                    )
+                )
+            else:  # sum layer
                 # the Mixing layer is only for regions which have multiple partitions as children.
                 multi_sums = [n for n in layer if len(graph.succ[n]) > 1]
                 if multi_sums:
-                    einet_layers.append(EinsumMixingLayer(graph, multi_sums, einet_layers[-1], use_em=self.args.use_em))
+                    einet_layers.append(
+                        EinsumMixingLayer(
+                            graph, multi_sums, einet_layers[-1], use_em=self.args.use_em
+                        )
+                    )
 
         self.einet_layers = torch.nn.ModuleList(einet_layers)
-        self.em_set_hyperparams(self.args.online_em_frequency, self.args.online_em_stepsize)
+        self.em_set_hyperparams(
+            self.args.online_em_frequency, self.args.online_em_stepsize
+        )
 
     def initialize(self, init_dict=None):
         """
@@ -136,7 +156,7 @@ class EinsumNetwork(torch.nn.Module):
         if all([type(k) == int for k in init_dict.keys()]):
             init_dict = {self.einet_layers[k]: init_dict[k] for k in init_dict.keys()}
         for layer in self.einet_layers:
-            layer.initialize(init_dict.get(layer, 'default'))
+            layer.initialize(init_dict.get(layer, "default"))
 
     def set_marginalization_idx(self, idx):
         """Set indices of marginalized variables."""
@@ -169,7 +189,9 @@ class EinsumNetwork(torch.nn.Module):
             lls += ll
         return -(lls / x_in.shape[0])
 
-    def backtrack(self, params, num_samples=1, class_idx=0, x=None, mode='sampling', **kwargs):
+    def backtrack(
+        self, params, num_samples=1, class_idx=0, x=None, mode="sampling", **kwargs
+    ):
         """
         Perform backtracking; for sampling or MPE approximation.
         """
@@ -192,20 +214,31 @@ class EinsumNetwork(torch.nn.Module):
         # go through network layer-by-layer, start with root
         for lidx, layer in zip(layer_idx, reversed(self.einet_layers)):
 
-            layer_params = params[lidx][0] # [0] because we condition on only one sample
+            layer_params = params[lidx][
+                0
+            ]  # [0] because we condition on only one sample
             # change the params in kwargs to layer_params passed
             if not sample_idx[layer]:
                 continue
 
             if type(layer) == EinsumLayer:
-                ret = layer.backtrack(layer_params,
-                                      dist_idx[layer],
-                                      reg_idx[layer],
-                                      sample_idx[layer],
-                                      use_evidence=(x is not None),
-                                      mode=mode,
-                                      **kwargs)
-                dist_idx_left, dist_idx_right, reg_idx_left, reg_idx_right, layers_left, layers_right = ret
+                ret = layer.backtrack(
+                    layer_params,
+                    dist_idx[layer],
+                    reg_idx[layer],
+                    sample_idx[layer],
+                    use_evidence=(x is not None),
+                    mode=mode,
+                    **kwargs
+                )
+                (
+                    dist_idx_left,
+                    dist_idx_right,
+                    reg_idx_left,
+                    reg_idx_right,
+                    layers_left,
+                    layers_right,
+                ) = ret
 
                 for c, layer_left in enumerate(layers_left):
                     sample_idx[layer_left].append(sample_idx[layer][c])
@@ -219,13 +252,15 @@ class EinsumNetwork(torch.nn.Module):
 
             elif type(layer) == EinsumMixingLayer:
 
-                ret = layer.backtrack(layer_params,
-                                      dist_idx[layer],
-                                      reg_idx[layer],
-                                      sample_idx[layer],
-                                      use_evidence=(x is not None),
-                                      mode=mode,
-                                      **kwargs)
+                ret = layer.backtrack(
+                    layer_params,
+                    dist_idx[layer],
+                    reg_idx[layer],
+                    sample_idx[layer],
+                    use_evidence=(x is not None),
+                    mode=mode,
+                    **kwargs
+                )
                 dist_idx_out, reg_idx_out, layers_out = ret
 
                 for c, layer_out in enumerate(layers_out):
@@ -242,32 +277,55 @@ class EinsumNetwork(torch.nn.Module):
                 dist_idx_sample = []
                 reg_idx_sample = []
                 for sidx in unique_sample_idx:
-                    dist_idx_sample.append([dist_idx[layer][c] for c, i in enumerate(sample_idx[layer]) if i == sidx])
-                    reg_idx_sample.append([reg_idx[layer][c] for c, i in enumerate(sample_idx[layer]) if i == sidx])
+                    dist_idx_sample.append(
+                        [
+                            dist_idx[layer][c]
+                            for c, i in enumerate(sample_idx[layer])
+                            if i == sidx
+                        ]
+                    )
+                    reg_idx_sample.append(
+                        [
+                            reg_idx[layer][c]
+                            for c, i in enumerate(sample_idx[layer])
+                            if i == sidx
+                        ]
+                    )
 
-                samples = layer.backtrack(layer_params, dist_idx_sample, reg_idx_sample, mode=mode, **kwargs)
+                samples = layer.backtrack(
+                    layer_params, dist_idx_sample, reg_idx_sample, mode=mode, **kwargs
+                )
 
                 if self.args.num_dims == 1:
                     samples = torch.squeeze(samples, 2)
 
                 if x is not None:
                     marg_idx = layer.get_marginalization_idx()
-                    keep_idx = [i for i in range(self.args.num_var) if i not in marg_idx]
+                    keep_idx = [
+                        i for i in range(self.args.num_var) if i not in marg_idx
+                    ]
                     samples[:, keep_idx] = x[:, keep_idx]
 
                 return samples
 
     def sample(self, x_con, y_con, i, j, num_samples=1, class_idx=0, x=None, **kwargs):
         """
-            Sample condition on x_con (e.g. surrounding patches in an image)
-            x_con is assumed to have shape [3, 3, num_vars]
+        Sample condition on x_con (e.g. surrounding patches in an image)
+        x_con is assumed to have shape [3, 3, num_vars]
         """
         # patch images and obtain 8x8 patches
         patches = extract_image_patches(x_con, self.px, self.py)
         x_in = patches[:, :, i, j]
         x_prev = get_surrounding_patches(patches, i, j, x_con.device)
         params = self.param_nn(x_prev, y_con)
-        return self.backtrack(params, num_samples=num_samples, class_idx=class_idx, x=x, mode='sample', **kwargs)
+        return self.backtrack(
+            params,
+            num_samples=num_samples,
+            class_idx=class_idx,
+            x=x,
+            mode="sample",
+            **kwargs
+        )
 
     def mpe(self, x_con, y_con, i, j, num_samples=1, class_idx=0, x=None, **kwargs):
         # patch images and obtain 8x8 patches
@@ -280,7 +338,14 @@ class EinsumNetwork(torch.nn.Module):
         y_oh = F.one_hot(y_con, num_classes=1000).unsqueeze(0)
         x_prev = torch.cat([x_prev, y_oh], dim=1)
         params = self.param_nn(x_prev)
-        return self.backtrack(params, num_samples=num_samples, class_idx=class_idx, x=x, mode='argmax', **kwargs)
+        return self.backtrack(
+            params,
+            num_samples=num_samples,
+            class_idx=class_idx,
+            x=x,
+            mode="argmax",
+            **kwargs
+        )
 
     def em_set_hyperparams(self, online_em_frequency, online_em_stepsize, purge=True):
         for l in self.einet_layers:
@@ -312,7 +377,9 @@ def log_likelihoods(outputs, labels=None):
 def eval_accuracy_batched(einet, x, labels, batch_size):
     """Computes accuracy in batched way."""
     with torch.no_grad():
-        idx_batches = torch.arange(0, x.shape[0], dtype=torch.int64, device=x.device).split(batch_size)
+        idx_batches = torch.arange(
+            0, x.shape[0], dtype=torch.int64, device=x.device
+        ).split(batch_size)
         n_correct = 0
         for batch_count, idx in enumerate(idx_batches):
             batch_x = x[idx, :]
@@ -326,7 +393,9 @@ def eval_accuracy_batched(einet, x, labels, batch_size):
 def eval_loglikelihood_batched(einet, x, labels=None, batch_size=100):
     """Computes log-likelihood in batched way."""
     with torch.no_grad():
-        idx_batches = torch.arange(0, x.shape[0], dtype=torch.int64, device=x.device).split(batch_size)
+        idx_batches = torch.arange(
+            0, x.shape[0], dtype=torch.int64, device=x.device
+        ).split(batch_size)
         ll_total = 0.0
         for batch_count, idx in enumerate(idx_batches):
             batch_x = x[idx, :]

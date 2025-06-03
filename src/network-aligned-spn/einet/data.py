@@ -36,11 +36,15 @@ class Shape:
 
     def downscale(self, scale):
         """Downscale this shape by the given scale. Only changes height/width."""
-        return Shape(self.channels, round(self.height / scale), round(self.width / scale))
+        return Shape(
+            self.channels, round(self.height / scale), round(self.width / scale)
+        )
 
     def upscale(self, scale):
         """Upscale this shape by the given scale. Only changes height/width."""
-        return Shape(self.channels, round(self.height * scale), round(self.width * scale))
+        return Shape(
+            self.channels, round(self.height * scale), round(self.width * scale)
+        )
 
     @property
     def num_pixels(self):
@@ -76,7 +80,9 @@ def get_data_shape(dataset_name: str) -> Shape:
 
 
 @torch.no_grad()
-def generate_data(dataset_name: str, n_samples: int = 1000) -> Tuple[torch.Tensor, torch.Tensor]:
+def generate_data(
+    dataset_name: str, n_samples: int = 1000
+) -> Tuple[torch.Tensor, torch.Tensor]:
     tag = dataset_name.replace("synth-", "")
     if tag == "2-clusters":
         centers = [[0.0, 0.0], [0.5, 0.5]]
@@ -236,7 +242,9 @@ def get_datasets(cfg, normalize: bool) -> Tuple[Dataset, Dataset, Dataset]:
 
     elif "celeba" in dataset_name:
         if normalize:
-            transform.transforms.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
+            transform.transforms.append(
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            )
 
         dataset_train = CelebA(**kwargs, split="train")
         dataset_val = CelebA(**kwargs, split="valid")
@@ -244,7 +252,9 @@ def get_datasets(cfg, normalize: bool) -> Tuple[Dataset, Dataset, Dataset]:
 
     elif dataset_name == "cifar":
         if normalize:
-            transform.transforms.append(transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]))
+            transform.transforms.append(
+                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            )
         dataset_train = CIFAR10(**kwargs, train=True)
 
         N = len(dataset_train.data)
@@ -256,7 +266,9 @@ def get_datasets(cfg, normalize: bool) -> Tuple[Dataset, Dataset, Dataset]:
 
     elif "svhn" in dataset_name:
         if normalize:
-            transform.transforms.append(transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]))
+            transform.transforms.append(
+                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            )
 
         # Load train
         dataset_train = SVHN(**kwargs, split="train")
@@ -277,7 +289,9 @@ def get_datasets(cfg, normalize: bool) -> Tuple[Dataset, Dataset, Dataset]:
     return dataset_train, dataset_val, dataset_test
 
 
-def build_dataloader(cfg, loop: bool, normalize: bool) -> Tuple[DataLoader, DataLoader, DataLoader]:
+def build_dataloader(
+    cfg, loop: bool, normalize: bool
+) -> Tuple[DataLoader, DataLoader, DataLoader]:
     # Get dataset objects
     dataset_train, dataset_val, dataset_test = get_datasets(cfg, normalize=normalize)
 
@@ -341,7 +355,9 @@ class TrainingSampler(Sampler):
 
     def __iter__(self):
         start = self._rank
-        yield from itertools.islice(self._infinite_indices(), start, None, self._world_size)
+        yield from itertools.islice(
+            self._infinite_indices(), start, None, self._world_size
+        )
 
     def _infinite_indices(self):
         g = torch.Generator()

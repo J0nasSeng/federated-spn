@@ -128,7 +128,9 @@ def invert_permutation(p: torch.Tensor):
     return s
 
 
-def calc_bpd(log_p: Tensor, image_shape: Tuple[int, int, int], has_gauss_dist: bool, n_bins: int) -> float:
+def calc_bpd(
+    log_p: Tensor, image_shape: Tuple[int, int, int], has_gauss_dist: bool, n_bins: int
+) -> float:
     n_pixels = np.prod(image_shape)
 
     if has_gauss_dist:
@@ -241,7 +243,9 @@ def rdc(x, y, f=np.sin, k=20, s=1 / 6.0, n=1):
         Cxy = C[:k, k0 : k0 + k]
         Cyx = C[k0 : k0 + k, :k]
 
-        eigs = np.linalg.eigvals(np.dot(np.dot(np.linalg.pinv(Cxx), Cxy), np.dot(np.linalg.pinv(Cyy), Cyx)))
+        eigs = np.linalg.eigvals(
+            np.dot(np.dot(np.linalg.pinv(Cxx), Cxy), np.dot(np.linalg.pinv(Cyy), Cyx))
+        )
 
         # Binary search if k is too large
         if not (np.all(np.isreal(eigs)) and 0 <= np.min(eigs) and np.max(eigs) <= 1):
@@ -276,7 +280,9 @@ def get_context(differentiable):
         return torch.no_grad()
 
 
-def diff_sample_one_hot(logits: torch.Tensor, dim: int, mode: str, hard: bool, tau: float) -> torch.Tensor:
+def diff_sample_one_hot(
+    logits: torch.Tensor, dim: int, mode: str, hard: bool, tau: float
+) -> torch.Tensor:
     """
     Perform differentiable sampling/mpe on the given input along a specific dimension.
 
@@ -301,11 +307,15 @@ def diff_sample_one_hot(logits: torch.Tensor, dim: int, mode: str, hard: bool, t
         # Differentiable argmax (see gumbel softmax trick code)
         y_soft = logits.softmax(dim)
         index = y_soft.max(dim, keepdim=True)[1]
-        y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, 1.0)
+        y_hard = torch.zeros_like(
+            logits, memory_format=torch.legacy_contiguous_format
+        ).scatter_(dim, index, 1.0)
         ret = y_hard - y_soft.detach() + y_soft
         return ret
     else:
-        raise Exception(f"Invalid mode option (got {mode}). Must be either 'sample' or 'argmax'.")
+        raise Exception(
+            f"Invalid mode option (got {mode}). Must be either 'sample' or 'argmax'."
+        )
 
 
 def index_one_hot(tensor: torch.Tensor, index: torch.Tensor, dim: int) -> torch.Tensor:

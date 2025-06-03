@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from sklearn.metrics import f1_score
 
+
 class AverageMeter(object):
     """Record metrics information"""
 
@@ -20,9 +21,10 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
+
 def evaluate_binary(model, criterion, test_loader):
     """Evaluate classify task model accuracy.
-    
+
     Returns:
         (loss.sum, acc.avg)
     """
@@ -42,7 +44,7 @@ def evaluate_binary(model, criterion, test_loader):
             if isinstance(outputs, tuple):
                 # then output is from TabNet
                 outputs, _ = outputs
-            
+
             outputs = torch.softmax(outputs, dim=1)
             labels_ = F.one_hot(labels).to(torch.float32)
             loss = criterion(outputs, labels_)
@@ -51,9 +53,13 @@ def evaluate_binary(model, criterion, test_loader):
             _, y_true = torch.max(labels_, 1)
             loss_.update(loss.item())
             acc_.update(torch.sum(predicted.eq(y_true)).item(), len(y_true))
-            
-            f1_micro = f1_score(labels.cpu().numpy(), predicted.cpu().numpy(), average='micro')
-            f1_macro = f1_score(labels.cpu().numpy(), predicted.cpu().numpy(), average='macro')
+
+            f1_micro = f1_score(
+                labels.cpu().numpy(), predicted.cpu().numpy(), average="micro"
+            )
+            f1_macro = f1_score(
+                labels.cpu().numpy(), predicted.cpu().numpy(), average="macro"
+            )
             f1_micro_.update(f1_micro)
             f1_macro_.update(f1_macro)
 

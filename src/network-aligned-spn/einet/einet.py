@@ -11,7 +11,12 @@ from torch import nn
 from .distributions.abstract_leaf import AbstractLeaf
 from .distributions.utils import truncated_normal_
 from .distributions.normal import RatNormal
-from einet.einsum_layer import EinsumLayer, EinsumMixingLayer, LinsumLayer, LinsumLayerLogWeights
+from einet.einsum_layer import (
+    EinsumLayer,
+    EinsumMixingLayer,
+    LinsumLayer,
+    LinsumLayerLogWeights,
+)
 from einet.factorized_leaf_layer import FactorizedLeaf
 from einet.layers import Sum
 from einet.type_checks import check_valid
@@ -63,7 +68,9 @@ class EinetConfig:
         self.num_repetitions = check_valid(self.num_repetitions, int, 1)
         self.num_leaves = check_valid(self.num_leaves, int, 1)
         self.dropout = check_valid(self.dropout, float, 0.0, 1.0, allow_none=True)
-        assert self.leaf_type is not None, "EinetConfig.leaf_type parameter was not set!"
+        assert (
+            self.leaf_type is not None
+        ), "EinetConfig.leaf_type parameter was not set!"
 
         assert isinstance(self.leaf_type, type) and issubclass(
             self.leaf_type, AbstractLeaf
@@ -110,7 +117,9 @@ class Einet(nn.Module):
         # Initialize weights
         self._init_weights()
 
-    def forward(self, x: torch.Tensor, marginalization_mask: torch.Tensor = None) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, marginalization_mask: torch.Tensor = None
+    ) -> torch.Tensor:
         """
         Inference pass for the Einet model.
 
@@ -229,10 +238,14 @@ class Einet(nn.Module):
             einsum_layers.append(layer)
 
         # Construct leaf
-        self.leaf = self._build_input_distribution(num_features_out=einsum_layers[-1].num_features)
+        self.leaf = self._build_input_distribution(
+            num_features_out=einsum_layers[-1].num_features
+        )
 
         # List layers in a bottom-to-top fashion
-        self.einsum_layers: Sequence[EinsumLayer] = nn.ModuleList(reversed(einsum_layers))
+        self.einsum_layers: Sequence[EinsumLayer] = nn.ModuleList(
+            reversed(einsum_layers)
+        )
 
         # If model has multiple reptitions, add repetition mixing layer
         if self.config.num_repetitions > 1:
@@ -250,7 +263,8 @@ class Einet(nn.Module):
             num_repetitions=1,
         )
         self._sampling_root.weights = nn.Parameter(
-            torch.ones(size=(1, self.config.num_classes, 1, 1)) * torch.tensor(1 / self.config.num_classes),
+            torch.ones(size=(1, self.config.num_classes, 1, 1))
+            * torch.tensor(1 / self.config.num_classes),
             requires_grad=False,
         )
 
@@ -304,7 +318,9 @@ class Einet(nn.Module):
         Returns:
             torch.Tensor: Clone of input tensor with NaNs replaced by MPE estimates.
         """
-        return self.sample(evidence=evidence, is_mpe=True, marginalized_scopes=marginalized_scopes)
+        return self.sample(
+            evidence=evidence, is_mpe=True, marginalized_scopes=marginalized_scopes
+        )
 
     def sample(
         self,
@@ -346,7 +362,9 @@ class Einet(nn.Module):
             torch.Tensor: Samples generated according to the distribution specified by the SPN.
 
         """
-        assert class_index is None or evidence is None, "Cannot provide both, evidence and class indices."
+        assert (
+            class_index is None or evidence is None
+        ), "Cannot provide both, evidence and class indices."
         assert (
             num_samples is None or evidence is None
         ), "Cannot provide both, number of samples to generate (num_samples) and evidence."
@@ -362,7 +380,9 @@ class Einet(nn.Module):
             # If class is given, use it as base index
             if class_index is not None:
                 if isinstance(class_index, list):
-                    indices = torch.tensor(class_index, device=self.__device).view(-1, 1)
+                    indices = torch.tensor(class_index, device=self.__device).view(
+                        -1, 1
+                    )
                     num_samples = indices.shape[0]
                 else:
                     indices = torch.empty(size=(num_samples, 1), device=self.__device)
@@ -397,7 +417,9 @@ class Einet(nn.Module):
             if self.config.num_repetitions > 1:
                 indices_out_pre_root = ctx.indices_out
 
-                ctx.indices_repetition = torch.zeros(num_samples, dtype=int, device=self.__device)
+                ctx.indices_repetition = torch.zeros(
+                    num_samples, dtype=int, device=self.__device
+                )
                 ctx = self.mixing.sample(context=ctx)
 
                 # Obtain repetition indices
@@ -466,7 +488,9 @@ class Einet(nn.Module):
             torch.Tensor: Samples generated according to the distribution specified by the SPN.
 
         """
-        assert class_index is None or evidence is None, "Cannot provide both, evidence and class indices."
+        assert (
+            class_index is None or evidence is None
+        ), "Cannot provide both, evidence and class indices."
         assert (
             num_samples is None or evidence is None
         ), "Cannot provide both, number of samples to generate (num_samples) and evidence."
@@ -507,11 +531,15 @@ class Einet(nn.Module):
             if self.config.num_repetitions > 1:
                 indices_out_pre_root = ctx.indices_out
 
-                ctx.indices_repetition = torch.ones(num_samples, 1, dtype=torch.float, device=self.__device)
+                ctx.indices_repetition = torch.ones(
+                    num_samples, 1, dtype=torch.float, device=self.__device
+                )
                 ctx = self.mixing.sample(context=ctx)
 
                 # Obtain repetition indices
-                ctx.indices_repetition = ctx.indices_out.view(num_samples, self.config.num_repetitions)
+                ctx.indices_repetition = ctx.indices_out.view(
+                    num_samples, self.config.num_repetitions
+                )
                 ctx.indices_out = indices_out_pre_root
             else:
                 ctx.indices_repetition = torch.ones(
@@ -557,21 +585,36 @@ class EinetMixture(nn.Module):
 
         self.einets: Sequence[Einet] = nn.ModuleList(einets)
         self._kmeans = KMeans(n_clusters=self.n_components, mode="euclidean", verbose=1)
-        self.mixture_weights = nn.Parameter(torch.empty(n_components), requires_grad=False)
-        self.centroids = nn.Parameter(torch.empty(n_components, einet_config.num_features), requires_grad=False)
+        self.mixture_weights = nn.Parameter(
+            torch.empty(n_components), requires_grad=False
+        )
+        self.centroids = nn.Parameter(
+            torch.empty(n_components, einet_config.num_features), requires_grad=False
+        )
 
     @torch.no_grad()
     def initialize(self, data: torch.Tensor):
         data = data.float()  # input has to be [n, d]
         self._kmeans.fit(data.view(data.shape[0], -1))
 
-        self.mixture_weights.data = self._kmeans.num_points_in_clusters / self._kmeans.num_points_in_clusters.sum()
+        self.mixture_weights.data = (
+            self._kmeans.num_points_in_clusters
+            / self._kmeans.num_points_in_clusters.sum()
+        )
         self.centroids.data = self._kmeans.centroids
 
     def _predict_cluster(self, x, marginalized_scopes: List[int] = None):
         x = x.view(x.shape[0], -1)  # input needs to be [n, d]
         if marginalized_scopes is not None:
-            keep_idx = list(sorted([i for i in range(self.config.num_features) if i not in marginalized_scopes]))
+            keep_idx = list(
+                sorted(
+                    [
+                        i
+                        for i in range(self.config.num_features)
+                        if i not in marginalized_scopes
+                    ]
+                )
+            )
             centroids = self.centroids[:, keep_idx]
             x = x[:, keep_idx]
         else:
@@ -592,7 +635,9 @@ class EinetMixture(nn.Module):
     def forward(self, x, marginalized_scope: torch.Tensor = None):
         assert self._kmeans is not None, "EinetMixture has not been initialized yet."
 
-        separated_idxs, separated_data = self._separate_data_by_cluster(x, marginalized_scope)
+        separated_idxs, separated_data = self._separate_data_by_cluster(
+            x, marginalized_scope
+        )
 
         lls_result = []
         data_idxs_all = []
@@ -642,11 +687,17 @@ class EinetMixture(nn.Module):
             cluster_idxs = [self.mixture_weights.argmax().item()]
         else:
             if num_samples_per_cluster is not None:
-                cluster_idxs = torch.arange(self.n_components).repeat_interleave(num_samples_per_cluster).tolist()
+                cluster_idxs = (
+                    torch.arange(self.n_components)
+                    .repeat_interleave(num_samples_per_cluster)
+                    .tolist()
+                )
             else:
                 # Sample from categorical over weights
                 cluster_idxs = (
-                    torch.distributions.Categorical(probs=self.mixture_weights).sample((num_samples,)).tolist()
+                    torch.distributions.Categorical(probs=self.mixture_weights)
+                    .sample((num_samples,))
+                    .tolist()
                 )
 
         if evidence is None:
@@ -671,7 +722,9 @@ class EinetMixture(nn.Module):
             samples = torch.cat(samples_all, dim=0)
         else:
             # Sample with evidence
-            separated_idxs, separated_data = self._separate_data_by_cluster(evidence, marginalized_scopes)
+            separated_idxs, separated_data = self._separate_data_by_cluster(
+                evidence, marginalized_scopes
+            )
 
             samples_all = []
             evidence_idxs_all = []
@@ -714,4 +767,6 @@ class EinetMixture(nn.Module):
         Returns:
             torch.Tensor: Clone of input tensor with NaNs replaced by MPE estimates.
         """
-        return self.sample(evidence=evidence, is_mpe=True, marginalized_scopes=marginalized_scopes)
+        return self.sample(
+            evidence=evidence, is_mpe=True, marginalized_scopes=marginalized_scopes
+        )

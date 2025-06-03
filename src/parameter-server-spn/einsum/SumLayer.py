@@ -4,6 +4,7 @@ from einsum.Layer import Layer
 import functools
 from itertools import count
 from utils import sample_matrix_categorical
+
 softmax = torch.nn.functional.softmax
 
 
@@ -28,7 +29,7 @@ class SumLayer(Layer):
         self.normalization_dims = normalization_dims
         if params_mask is not None:
             params_mask = params_mask.clone().detach()
-        self.register_buffer('params_mask', params_mask)
+        self.register_buffer("params_mask", params_mask)
 
         self.online_em_frequency = None
         self.online_em_stepsize = None
@@ -53,7 +54,16 @@ class SumLayer(Layer):
         """
         raise NotImplementedError
 
-    def _backtrack(self, dist_idx, node_idx, sample_idx, params, use_evidence=False, mode='sample', **kwargs):
+    def _backtrack(
+        self,
+        dist_idx,
+        node_idx,
+        sample_idx,
+        params,
+        use_evidence=False,
+        mode="sample",
+        **kwargs
+    ):
         """
         Helper routine to implement EiNet backtracking, for sampling or MPE approximation.
 
@@ -83,10 +93,12 @@ class SumLayer(Layer):
         with torch.no_grad():
             if self.params_mask is not None:
                 params.data *= self.params_mask
-            params.data = params.data / (params.data.sum(self.normalization_dims, keepdim=True))
+            params.data = params.data / (
+                params.data.sum(self.normalization_dims, keepdim=True)
+            )
         return params
 
-    def initialize(self, initializer='default'):
+    def initialize(self, initializer="default"):
         """
         Initialize the parameters for this SumLayer.
 
@@ -97,7 +109,7 @@ class SumLayer(Layer):
         """
         if initializer is None:
             self.params = None
-        elif type(initializer) == str and initializer == 'default':
+        elif type(initializer) == str and initializer == "default":
             if self._use_em:
                 self.params = torch.nn.Parameter(self.default_initializer())
             else:
@@ -125,22 +137,32 @@ class SumLayer(Layer):
             params = reparam
         self._forward(params)
 
-    def backtrack(self, dist_idx, node_idx, sample_idx, use_evidence=False, mode='sample', **kwargs):
+    def backtrack(
+        self,
+        dist_idx,
+        node_idx,
+        sample_idx,
+        use_evidence=False,
+        mode="sample",
+        **kwargs
+    ):
         """
         Helper routine for backtracking in EiNets, see _sample(...) for details.
         """
-        if mode != 'sample' and mode != 'argmax':
-            raise AssertionError('Unknown backtracking mode {}'.format(mode))
+        if mode != "sample" and mode != "argmax":
+            raise AssertionError("Unknown backtracking mode {}".format(mode))
 
         if self._use_em:
             params = self.params
         else:
             with torch.no_grad():
                 params = self.reparam(self.params)
-        return self._backtrack(dist_idx, node_idx, sample_idx, params, use_evidence, mode, **kwargs)
+        return self._backtrack(
+            dist_idx, node_idx, sample_idx, params, use_evidence, mode, **kwargs
+        )
 
     def em_purge(self):
-        """ Discard em statistics."""
+        """Discard em statistics."""
         if self.params is not None:
             self.params.grad = None
 
@@ -185,12 +207,14 @@ class SumLayer(Layer):
                 s = self.online_em_stepsize
                 p = torch.clamp(n, 1e-16)
                 p = p / (p.sum(self.normalization_dims, keepdim=True))
-                self.params.data = (1. - s) * self.params + s * p
+                self.params.data = (1.0 - s) * self.params + s * p
 
             self.params.data = torch.clamp(self.params, 1e-16)
             if self.params_mask is not None:
                 self.params.data *= self.params_mask
-            self.params.data = self.params / (self.params.sum(self.normalization_dims, keepdim=True))
+            self.params.data = self.params / (
+                self.params.sum(self.normalization_dims, keepdim=True)
+            )
             self.params.grad = None
 
     def reparam_function(self):
@@ -198,13 +222,26 @@ class SumLayer(Layer):
         Reparametrization function, transforming unconstrained parameters into valid sum-weight
         (non-negative, normalized).
         """
+
         def reparam(params_in):
-            other_dims = tuple(i for i in range(len(params_in.shape)) if i not in self.normalization_dims)
+            other_dims = tuple(
+                i
+                for i in range(len(params_in.shape))
+                if i not in self.normalization_dims
+            )
 
             permutation = other_dims + self.normalization_dims
-            unpermutation = tuple(c for i in range(len(permutation)) for c, j in enumerate(permutation) if j == i)
+            unpermutation = tuple(
+                c
+                for i in range(len(permutation))
+                for c, j in enumerate(permutation)
+                if j == i
+            )
 
-            numel = functools.reduce(lambda x, y: x * y, [params_in.shape[i] for i in self.normalization_dims])
+            numel = functools.reduce(
+                lambda x, y: x * y,
+                [params_in.shape[i] for i in self.normalization_dims],
+            )
 
             other_shape = tuple(params_in.shape[i] for i in other_dims)
             params_in = params_in.permute(permutation)
@@ -213,6 +250,7 @@ class SumLayer(Layer):
             out = softmax(params_in, -1)
             out = out.reshape(orig_shape).permute(unpermutation)
             return out
+
         return reparam
 
     def project_params(self, params):
@@ -293,19 +331,32 @@ class EinsumLayer(SumLayer):
 
         self.num_sums = set([n.num_dist for p in self.products for n in graph.pred[p]])
         if len(self.num_sums) != 1:
-            raise AssertionError("Number of distributions must be the same for all parent nodes in one layer.")
+            raise AssertionError(
+                "Number of distributions must be the same for all parent nodes in one layer."
+            )
         self.num_sums = list(self.num_sums)[0]
 
-        self.num_input_dist = set([n.num_dist for p in self.products for n in graph.succ[p]])
+        self.num_input_dist = set(
+            [n.num_dist for p in self.products for n in graph.succ[p]]
+        )
         if len(self.num_input_dist) != 1:
-            raise AssertionError("Number of input distributions must be the same for all child nodes in one layer.")
+            raise AssertionError(
+                "Number of input distributions must be the same for all child nodes in one layer."
+            )
         self.num_input_dist = list(self.num_input_dist)[0]
 
         if any([len(graph.succ[p]) != 2 for p in self.products]):
             raise AssertionError("Only 2-partitions are currently supported.")
 
-        param_shape = (self.num_input_dist, self.num_input_dist, self.num_sums, len(self.products))
-        super(EinsumLayer, self).__init__(param_shape, normalization_dims=(0, 1), use_em=use_em)
+        param_shape = (
+            self.num_input_dist,
+            self.num_input_dist,
+            self.num_sums,
+            len(self.products),
+        )
+        super(EinsumLayer, self).__init__(
+            param_shape, normalization_dims=(0, 1), use_em=use_em
+        )
 
         # get pairs of nodes which are input to the products (list of lists)
         # length of the outer list is same as self.products, length of inner lists is 2
@@ -313,8 +364,16 @@ class EinsumLayer(SumLayer):
         self.inputs = [sorted(graph.successors(p)) for p in self.products]
 
         # collect all layers which contain left/right children
-        self.left_layers = [l for l in layers if any([i[0].einet_address.layer == l for i in self.inputs])]
-        self.right_layers = [l for l in layers if any([i[1].einet_address.layer == l for i in self.inputs])]
+        self.left_layers = [
+            l
+            for l in layers
+            if any([i[0].einet_address.layer == l for i in self.inputs])
+        ]
+        self.right_layers = [
+            l
+            for l in layers
+            if any([i[1].einet_address.layer == l for i in self.inputs])
+        ]
 
         # The following code does some index bookkeeping, in order that we can gather the required data in forward(...).
         # Recall that in EiNets, each layer implements a log-density tensor of shape
@@ -338,10 +397,15 @@ class EinsumLayer(SumLayer):
                         if permutation[c] is not None:
                             raise AssertionError("This should not happen.")
                         permutation[c] = next(permutation_counter)
-                self.register_buffer('idx_layer_{}_child_{}'.format(layer_counter, child_num), torch.tensor(cur_idx))
+                self.register_buffer(
+                    "idx_layer_{}_child_{}".format(layer_counter, child_num),
+                    torch.tensor(cur_idx),
+                )
             if any(i is None for i in permutation):
                 raise AssertionError("This should not happen.")
-            self.register_buffer('permutation_child_{}'.format(child_num), torch.tensor(permutation))
+            self.register_buffer(
+                "permutation_child_{}".format(child_num), torch.tensor(permutation)
+            )
 
         do_input_bookkeeping(self.left_layers, 0)
         do_input_bookkeeping(self.right_layers, 1)
@@ -373,16 +437,27 @@ class EinsumLayer(SumLayer):
         """
         EinsumLayer forward pass.
         """
+
         def cidx(layer_counter, child_num):
-            return self.__getattr__('idx_layer_{}_child_{}'.format(layer_counter, child_num))
+            return self.__getattr__(
+                "idx_layer_{}_child_{}".format(layer_counter, child_num)
+            )
 
         # iterate over all layers which contain "left" nodes, get their indices; then, concatenate them to one tensor
-        self.left_child_log_prob = torch.cat([l.prob[:, :,  cidx(c, 0)] for c, l in enumerate(self.left_layers)], 2)
+        self.left_child_log_prob = torch.cat(
+            [l.prob[:, :, cidx(c, 0)] for c, l in enumerate(self.left_layers)], 2
+        )
         # get into the same order as assumed in self.products
-        self.left_child_log_prob = self.left_child_log_prob[:, :, self.permutation_child_0]
+        self.left_child_log_prob = self.left_child_log_prob[
+            :, :, self.permutation_child_0
+        ]
         # ditto, for right "right" nodes
-        self.right_child_log_prob = torch.cat([l.prob[:, :, cidx(c, 1)] for c, l in enumerate(self.right_layers)], 2)
-        self.right_child_log_prob = self.right_child_log_prob[:, :, self.permutation_child_1]
+        self.right_child_log_prob = torch.cat(
+            [l.prob[:, :, cidx(c, 1)] for c, l in enumerate(self.right_layers)], 2
+        )
+        self.right_child_log_prob = self.right_child_log_prob[
+            :, :, self.permutation_child_1
+        ]
 
         # We perform the LogEinsumExp trick, by first subtracting the maxes
         left_max = torch.max(self.left_child_log_prob, 1, keepdim=True)[0]
@@ -391,18 +466,27 @@ class EinsumLayer(SumLayer):
         right_prob = torch.exp(self.right_child_log_prob - right_max)
 
         # this is the central einsum operation
-        prob = torch.einsum('bip,bjp,ijop->bop', left_prob, right_prob, params)
+        prob = torch.einsum("bip,bjp,ijop->bop", left_prob, right_prob, params)
 
         # LogEinsumExp trick, re-add the max
         prob = torch.log(prob) + left_max + right_max
 
         # zero-padding (-inf in log-domain) for the following mixing layer
         if self.dummy_idx:
-            prob = F.pad(prob, [0, 1], "constant", float('-inf'))
+            prob = F.pad(prob, [0, 1], "constant", float("-inf"))
 
         self.prob = prob
 
-    def _backtrack(self, dist_idx, node_idx, sample_idx, params, use_evidence=False, mode='sample', **kwargs):
+    def _backtrack(
+        self,
+        dist_idx,
+        node_idx,
+        sample_idx,
+        params,
+        use_evidence=False,
+        mode="sample",
+        **kwargs
+    ):
         """
         Helper routine for backtracking in EiNets.
 
@@ -426,19 +510,25 @@ class EinsumLayer(SumLayer):
             if use_evidence:
                 log_prior = torch.log(params[:, :, dist_idx, node_idx])
                 log_prior = log_prior.permute(2, 0, 1)
-                left_log_prob = self.left_child_log_prob[sample_idx, :, node_idx].unsqueeze(2)
-                right_log_prob = self.right_child_log_prob[sample_idx, :, node_idx].unsqueeze(1)
+                left_log_prob = self.left_child_log_prob[
+                    sample_idx, :, node_idx
+                ].unsqueeze(2)
+                right_log_prob = self.right_child_log_prob[
+                    sample_idx, :, node_idx
+                ].unsqueeze(1)
                 log_posterior = log_prior + left_log_prob + right_log_prob
                 log_posterior = log_posterior.reshape(log_posterior.shape[0], -1)
-                posterior = torch.exp(log_posterior - torch.logsumexp(log_posterior, 1, keepdim=True))
+                posterior = torch.exp(
+                    log_posterior - torch.logsumexp(log_posterior, 1, keepdim=True)
+                )
             else:
                 posterior = params[:, :, dist_idx, node_idx]
                 posterior = posterior.permute(2, 0, 1)
                 posterior = posterior.reshape(posterior.shape[0], -1)
 
-            if mode == 'sample':
+            if mode == "sample":
                 idx = sample_matrix_categorical(posterior)
-            elif mode == 'argmax':
+            elif mode == "argmax":
                 idx = torch.argmax(posterior, -1)
 
             dist_idx_right = idx % self.num_input_dist
@@ -448,7 +538,14 @@ class EinsumLayer(SumLayer):
             layers_left = [self.inputs[i][0].einet_address.layer for i in node_idx]
             layers_right = [self.inputs[i][1].einet_address.layer for i in node_idx]
 
-        return dist_idx_left, dist_idx_right, node_idx_left, node_idx_right, layers_left, layers_right
+        return (
+            dist_idx_left,
+            dist_idx_right,
+            node_idx_left,
+            node_idx_right,
+            layers_left,
+            layers_right,
+        )
 
 
 class EinsumMixingLayer(SumLayer):
@@ -498,7 +595,9 @@ class EinsumMixingLayer(SumLayer):
 
         self.num_sums = set([n.num_dist for n in self.nodes])
         if len(self.num_sums) != 1:
-            raise AssertionError("Number of distributions must be the same for all regions in one layer.")
+            raise AssertionError(
+                "Number of distributions must be the same for all regions in one layer."
+            )
         self.num_sums = list(self.num_sums)[0]
 
         self.max_components = max([len(graph.succ[n]) for n in self.nodes])
@@ -508,7 +607,7 @@ class EinsumMixingLayer(SumLayer):
         self.mixing_component_idx = einsum_layer.mixing_component_idx
 
         if einsum_layer.dummy_idx is None:
-            raise AssertionError('EinsumLayer has not set a dummy index for padding.')
+            raise AssertionError("EinsumLayer has not set a dummy index for padding.")
 
         param_shape = (self.num_sums, len(self.nodes), self.max_components)
 
@@ -520,49 +619,70 @@ class EinsumMixingLayer(SumLayer):
         for c, node in enumerate(self.nodes):
             num_components = len(self.mixing_component_idx[node])
             padded_idx += self.mixing_component_idx[node]
-            padded_idx += [einsum_layer.dummy_idx] * (self.max_components - num_components)
+            padded_idx += [einsum_layer.dummy_idx] * (
+                self.max_components - num_components
+            )
             if self.max_components > num_components:
                 params_mask[:, c, num_components:] = 0.0
             node.einet_address.layer = self
             node.einet_address.idx = c
 
-        super(EinsumMixingLayer, self).__init__(param_shape,
-                                                normalization_dims=(2,),
-                                                use_em=use_em,
-                                                params_mask=params_mask)
+        super(EinsumMixingLayer, self).__init__(
+            param_shape, normalization_dims=(2,), use_em=use_em, params_mask=params_mask
+        )
 
-        self.register_buffer('padded_idx', torch.tensor(padded_idx))
+        self.register_buffer("padded_idx", torch.tensor(padded_idx))
 
     def _forward(self, params):
         self.child_log_prob = self.layers[0].prob[:, :, self.padded_idx]
-        self.child_log_prob = self.child_log_prob.reshape((self.child_log_prob.shape[0],
-                                                           self.child_log_prob.shape[1],
-                                                           len(self.nodes),
-                                                           self.max_components))
+        self.child_log_prob = self.child_log_prob.reshape(
+            (
+                self.child_log_prob.shape[0],
+                self.child_log_prob.shape[1],
+                len(self.nodes),
+                self.max_components,
+            )
+        )
 
         max_p = torch.max(self.child_log_prob, 3, keepdim=True)[0]
         prob = torch.exp(self.child_log_prob - max_p)
 
-        output = torch.einsum('bonc,onc->bon', prob, params)
+        output = torch.einsum("bonc,onc->bon", prob, params)
 
         self.prob = torch.log(output) + max_p[:, :, :, 0]
 
-    def _backtrack(self, dist_idx, node_idx, sample_idx, params, use_evidence=False, mode='sample', **kwargs):
+    def _backtrack(
+        self,
+        dist_idx,
+        node_idx,
+        sample_idx,
+        params,
+        use_evidence=False,
+        mode="sample",
+        **kwargs
+    ):
         """Helper routine for backtracking in EiNets."""
         with torch.no_grad():
             if use_evidence:
                 log_prior = torch.log(params[dist_idx, node_idx, :])
-                log_posterior = log_prior + self.child_log_prob[sample_idx, dist_idx, node_idx, :]
-                posterior = torch.exp(log_posterior - torch.logsumexp(log_posterior, 1, keepdim=True))
+                log_posterior = (
+                    log_prior + self.child_log_prob[sample_idx, dist_idx, node_idx, :]
+                )
+                posterior = torch.exp(
+                    log_posterior - torch.logsumexp(log_posterior, 1, keepdim=True)
+                )
             else:
                 posterior = params[dist_idx, node_idx, :]
 
-            if mode == 'sample':
+            if mode == "sample":
                 idx = sample_matrix_categorical(posterior)
-            elif mode == 'argmax':
+            elif mode == "argmax":
                 idx = torch.argmax(posterior, -1)
             dist_idx_out = dist_idx
-            node_idx_out = [self.mixing_component_idx[self.nodes[i]][idx[c]] for c, i in enumerate(node_idx)]
+            node_idx_out = [
+                self.mixing_component_idx[self.nodes[i]][idx[c]]
+                for c, i in enumerate(node_idx)
+            ]
             layers_out = [self.layers[0]] * len(node_idx)
 
         return dist_idx_out, node_idx_out, layers_out

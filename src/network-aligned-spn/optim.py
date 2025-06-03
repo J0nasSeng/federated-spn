@@ -8,12 +8,14 @@ from spn.structure.Base import Sum, get_nodes_by_type, get_number_of_nodes
 import numpy as np
 from copy import deepcopy
 
+
 def softmax(vec, temperature):
     """
     turn vec into normalized probability
     """
-    sum_exp = sum(np.exp(x/temperature) for x in vec)
-    return np.array([np.exp(x/temperature)/sum_exp for x in vec])
+    sum_exp = sum(np.exp(x / temperature) for x in vec)
+    return np.array([np.exp(x / temperature) / sum_exp for x in vec])
+
 
 def cond_sum_em_update(allowed_nodes):
     def sum_em_update(node, node_gradients=None, root_lls=None, all_lls=None, **kwargs):
@@ -29,11 +31,10 @@ def cond_sum_em_update(allowed_nodes):
             node.weights = np.exp(node.weights - logsumexp(node.weights)) + np.exp(-100)
 
             node.weights = node.weights / node.weights.sum()
-            #node.weights = softmax(node.weights, 0.1)
+            # node.weights = softmax(node.weights, 0.1)
             idx = np.argsort(node.weights)[:-3]
             node.weights[idx] = 0
             node.weights = node.weights / node.weights.sum()
-
 
             if node.weights.sum() > 1:
                 node.weights[np.argmax(node.weights)] -= node.weights.sum() - 1
@@ -41,16 +42,23 @@ def cond_sum_em_update(allowed_nodes):
             assert not np.any(np.isnan(node.weights))
             assert np.isclose(np.sum(node.weights), 1)
             assert not np.any(node.weights < 0)
-            assert node.weights.sum() <= 1, "sum: {}, node weights: {}".format(node.weights.sum(), node.weights)
+            assert node.weights.sum() <= 1, "sum: {}, node weights: {}".format(
+                node.weights.sum(), node.weights
+            )
+
     return sum_em_update
 
+
 _node_updates = {}
+
 
 def add_node_em_update(node_type, lambda_func):
     _node_updates[node_type] = lambda_func
 
 
-def EM_optimization_network(spn, data, iterations=5, node_updates=_node_updates, skip_validation=False, **kwargs):
+def EM_optimization_network(
+    spn, data, iterations=5, node_updates=_node_updates, skip_validation=False, **kwargs
+):
     if not skip_validation:
         valid, err = is_valid(spn)
         assert valid, "invalid spn: " + err

@@ -9,16 +9,16 @@ import datasets
 from PIL import Image
 from sklearn.cluster import KMeans
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 ##################################################################
 num_clusters = 1
-result_base_path = '../models/einet/svhn/'
+result_base_path = "../models/einet/svhn/"
 
 num_sums = 40
 
 exponential_family = EinsumNetwork.NormalArray
-exponential_family_args = {'min_var': 1e-6, 'max_var': 0.01}
+exponential_family_args = {"min_var": 1e-6, "max_var": 0.01}
 
 num_epochs = 3
 batch_size = 10
@@ -30,12 +30,19 @@ width = 32
 ##################################################################
 
 print("loading data")
-train_x_all, train_labels, test_x_all, test_labels, extra_x, extra_labels = datasets.load_svhn()
+(
+    train_x_all,
+    train_labels,
+    test_x_all,
+    test_labels,
+    extra_x,
+    extra_labels,
+) = datasets.load_svhn()
 
 valid_x_all = train_x_all[50000:, ...]
 train_x_all = np.concatenate((train_x_all[0:50000, ...], extra_x), 0)
-#rand_idx = np.random.randint(0, len(train_x_all) - 1, int(0.001*len(train_x_all)))
-#train_x_all = train_x_all[rand_idx]
+# rand_idx = np.random.randint(0, len(train_x_all) - 1, int(0.001*len(train_x_all)))
+# train_x_all = train_x_all[rand_idx]
 
 train_x_all = train_x_all.reshape(train_x_all.shape[0], height, width, 3)
 valid_x_all = valid_x_all.reshape(valid_x_all.shape[0], height, width, 3)
@@ -49,14 +56,13 @@ def get_clusters(train_x, num_clusters=100):
 
     if not os.path.isfile(filename):
         print("running kmeans...")
-        kmeans = KMeans(n_clusters=num_clusters,
-                        verbose=3,
-                        max_iter=100,
-                        n_init=3).fit(train_x.reshape(train_x.shape[0], -1))
+        kmeans = KMeans(n_clusters=num_clusters, verbose=3, max_iter=100, n_init=3).fit(
+            train_x.reshape(train_x.shape[0], -1)
+        )
         means = kmeans.cluster_centers_
         idx = kmeans.labels_
-        #utils.mkdir_p(cluster_path)
-        #pickle.dump((means, idx), open(filename, "wb"))
+        # utils.mkdir_p(cluster_path)
+        # pickle.dump((means, idx), open(filename, "wb"))
     else:
         pass
         # means, idx = pickle.load(open(filename, "rb"))
@@ -82,7 +88,7 @@ def eval_ll(einet, mean, valid_x, batch_size):
             batch = torch.tensor(valid_x[batch_idx, :]).to(device).float()
             batch = batch.reshape(batch.shape[0], height * width, 3)
             batch = batch - mean
-            batch = batch / 255.
+            batch = batch / 255.0
             ll_sample = einet.forward(batch)
             ll = ll_sample.sum() + ll
         return ll / len(valid_x)
@@ -100,21 +106,27 @@ def compute_cluster_idx(data, cluster_means):
     cluster_idx = np.zeros(len(data), dtype=np.uint32)
     for k in range(len(data)):
         img = data[k].astype(np.float32)
-        cluster_idx[k] = np.argmin(np.sum((cluster_means.reshape(-1, height * width * 3) - img.reshape(1, height * width * 3)) ** 2, 1))
+        cluster_idx[k] = np.argmin(
+            np.sum(
+                (
+                    cluster_means.reshape(-1, height * width * 3)
+                    - img.reshape(1, height * width * 3)
+                )
+                ** 2,
+                1,
+            )
+        )
     return cluster_idx
 
 
 def train(einet, mean, train_x, valid_x, test_x, result_path):
-    model_file = os.path.join(result_path, 'einet.mdl')
-    graph_file = os.path.join(result_path, 'einet.pc')
-    record_file = os.path.join(result_path, 'record.pkl')
-    sample_dir = os.path.join(result_path, 'samples')
+    model_file = os.path.join(result_path, "einet.mdl")
+    graph_file = os.path.join(result_path, "einet.pc")
+    record_file = os.path.join(result_path, "record.pkl")
+    sample_dir = os.path.join(result_path, "samples")
     utils.mkdir_p(sample_dir)
 
-    record = {'train_ll': [],
-              'valid_ll': [],
-              'test_ll': [],
-              'best_validation_ll': None}
+    record = {"train_ll": [], "valid_ll": [], "test_ll": [], "best_validation_ll": None}
 
     for epoch_count in range(num_epochs):
 
@@ -125,7 +137,7 @@ def train(einet, mean, train_x, valid_x, test_x, result_path):
             # we subtract the mean for this cluster -- centered data seems to help EM learning
             # we will re-add the mean to the Gaussian means below
             batch = batch - mean
-            batch = batch / 255.
+            batch = batch / 255.0
 
             ll_sample = einet.forward(batch)
             log_likelihood = ll_sample.sum()
@@ -139,31 +151,42 @@ def train(einet, mean, train_x, valid_x, test_x, result_path):
         test_ll = eval_ll(einet, mean, test_x, batch_size=batch_size)
 
         ##### store results
-        record['train_ll'].append(train_ll)
-        record['valid_ll'].append(valid_ll)
-        record['test_ll'].append(test_ll)
+        record["train_ll"].append(train_ll)
+        record["valid_ll"].append(valid_ll)
+        record["test_ll"].append(test_ll)
 
-        pickle.dump(record, open(record_file, 'wb'))
+        pickle.dump(record, open(record_file, "wb"))
 
-        print("[{}]   train LL {}   valid LL {}   test LL {}".format(epoch_count, train_ll, valid_ll, test_ll))
+        print(
+            "[{}]   train LL {}   valid LL {}   test LL {}".format(
+                epoch_count, train_ll, valid_ll, test_ll
+            )
+        )
 
-        if record['best_validation_ll'] is None or valid_ll > record['best_validation_ll']:
-            record['best_validation_ll'] = valid_ll
+        if (
+            record["best_validation_ll"] is None
+            or valid_ll > record["best_validation_ll"]
+        ):
+            record["best_validation_ll"] = valid_ll
             torch.save(einet, model_file)
-            #Graph.write_gpickle(graph, graph_file)
+            # Graph.write_gpickle(graph, graph_file)
 
         if epoch_count % 10 == 0:
             # draw some samples
             samples = einet.sample(num_samples=25, std_correction=0.0).cpu().numpy()
-            samples = samples + mean.detach().cpu().numpy() / 255.
+            samples = samples + mean.detach().cpu().numpy() / 255.0
             samples -= samples.min()
             samples /= samples.max()
             samples = samples.reshape(samples.shape[0], height, width, 3)
-            img = np.zeros((height*5 + 40, width*5 + 40, 3))
+            img = np.zeros((height * 5 + 40, width * 5 + 40, 3))
             for h in range(5):
                 for w in range(5):
-                    img[h*(height+10):h*(height+10)+height, w*(width+10):w*(width+10)+width, :] = samples[h*5 + w, :]
-            img = Image.fromarray(np.round(img * 255.).astype(np.uint8))
+                    img[
+                        h * (height + 10) : h * (height + 10) + height,
+                        w * (width + 10) : w * (width + 10) + width,
+                        :,
+                    ] = samples[h * 5 + w, :]
+            img = Image.fromarray(np.round(img * 255.0).astype(np.uint8))
             img.save(os.path.join(sample_dir, "samples{}.jpg".format(epoch_count)))
 
     # We subtract the mean for the current cluster from the data (centering it at 0).
@@ -173,8 +196,12 @@ def train(einet, mean, train_x, valid_x, test_x, result_path):
         params = einet.einet_layers[0].ef_array.params
         mu2 = params[..., 0:3] ** 2
         params[..., 3:] -= mu2
-        params[..., 3:] = torch.clamp(params[..., 3:], exponential_family_args['min_var'], exponential_family_args['max_var'])
-        params[..., 0:3] += mean.reshape((width*height, 1, 1, 3)) / 255.
+        params[..., 3:] = torch.clamp(
+            params[..., 3:],
+            exponential_family_args["min_var"],
+            exponential_family_args["max_var"],
+        )
+        params[..., 0:3] += mean.reshape((width * height, 1, 1, 3)) / 255.0
         params[..., 3:] += params[..., 0:3] ** 2
     torch.save(einet, model_file)
 
@@ -206,7 +233,7 @@ for cluster_n in range(num_clusters):
     graph = Graph.poon_domingos_structure(shape=(height, width), axes=[1], delta=[8])
 
     args = EinsumNetwork.Args(
-        num_var=height*width,
+        num_var=height * width,
         num_dims=3,
         num_classes=1,
         num_sums=num_sums,
@@ -214,7 +241,8 @@ for cluster_n in range(num_clusters):
         exponential_family=exponential_family,
         exponential_family_args=exponential_family_args,
         online_em_frequency=online_em_frequency,
-        online_em_stepsize=online_em_stepsize)
+        online_em_stepsize=online_em_stepsize,
+    )
 
     print()
     print(result_path)

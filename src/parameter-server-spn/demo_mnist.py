@@ -5,15 +5,15 @@ from einsum import Graph, EinsumNetwork
 import datasets
 import utils
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 demo_text = """
-This demo loads (fashion) mnist and quickly trains an EiNet for some epochs. 
+This demo loads (fashion) mnist and quickly trains an EiNet for some epochs.
 
-There are some parameters to play with, as for example which exponential family you want 
-to use, which classes you want to pick, and structural parameters. Then an EiNet is trained, 
+There are some parameters to play with, as for example which exponential family you want
+to use, which classes you want to pick, and structural parameters. Then an EiNet is trained,
 the log-likelihoods reported, some (conditional and unconditional) samples are produced, and
-approximate MPE reconstructions are generated. 
+approximate MPE reconstructions are generated.
 """
 print(demo_text)
 
@@ -30,7 +30,7 @@ classes = [7]
 
 K = 10
 
-structure = 'poon-domingos'
+structure = "poon-domingos"
 # structure = 'binary-trees'
 
 # 'poon-domingos'
@@ -52,11 +52,11 @@ online_em_stepsize = 0.05
 
 exponential_family_args = None
 if exponential_family == EinsumNetwork.BinomialArray:
-    exponential_family_args = {'N': 255}
+    exponential_family_args = {"N": 255}
 if exponential_family == EinsumNetwork.CategoricalArray:
-    exponential_family_args = {'K': 256}
+    exponential_family_args = {"K": 256}
 if exponential_family == EinsumNetwork.NormalArray:
-    exponential_family_args = {'min_var': 1e-6, 'max_var': 0.1}
+    exponential_family_args = {"min_var": 1e-6, "max_var": 0.1}
 
 # get data
 if fashion_mnist:
@@ -65,10 +65,10 @@ else:
     train_x, train_labels, test_x, test_labels = datasets.load_mnist()
 
 if not exponential_family != EinsumNetwork.NormalArray:
-    train_x /= 255.
-    test_x /= 255.
-    train_x -= .5
-    test_x -= .5
+    train_x /= 255.0
+    test_x /= 255.0
+    train_x -= 0.5
+    test_x -= 0.5
 
 # validation split
 valid_x = train_x[-10000:, :]
@@ -88,30 +88,35 @@ test_x = torch.from_numpy(test_x).to(torch.device(device))
 
 # Make EinsumNetwork
 ######################################
-if structure == 'poon-domingos':
+if structure == "poon-domingos":
     pd_delta = [[height / d, width / d] for d in pd_num_pieces]
     graph = Graph.poon_domingos_structure(shape=(height, width), delta=pd_delta)
     print(train_x.shape[1])
-elif structure == 'binary-trees':
-    graph = Graph.random_binary_trees(num_var=train_x.shape[1], depth=depth, num_repetitions=num_repetitions)
+elif structure == "binary-trees":
+    graph = Graph.random_binary_trees(
+        num_var=train_x.shape[1], depth=depth, num_repetitions=num_repetitions
+    )
 else:
     raise AssertionError("Unknown Structure")
 
 args = EinsumNetwork.Args(
-        num_var=train_x.shape[1],
-        num_dims=1,
-        num_classes=1,
-        num_sums=K,
-        num_input_distributions=K,
-        exponential_family=exponential_family,
-        exponential_family_args=exponential_family_args,
-        online_em_frequency=online_em_frequency,
-        online_em_stepsize=online_em_stepsize)
+    num_var=train_x.shape[1],
+    num_dims=1,
+    num_classes=1,
+    num_sums=K,
+    num_input_distributions=K,
+    exponential_family=exponential_family,
+    exponential_family_args=exponential_family_args,
+    online_em_frequency=online_em_frequency,
+    online_em_stepsize=online_em_stepsize,
+)
 
 einet = EinsumNetwork.EinsumNetwork(graph, args)
 einet.initialize()
 einet.to(device)
-param_names = [(p[0], p[1].shape) for p in einet.named_parameters() if p[1].requires_grad == True]
+param_names = [
+    (p[0], p[1].shape) for p in einet.named_parameters() if p[1].requires_grad == True
+]
 print(param_names)
 
 # Train
@@ -125,14 +130,20 @@ for epoch_count in range(num_epochs):
 
     ##### evaluate
     einet.eval()
-    train_ll = EinsumNetwork.eval_loglikelihood_batched(einet, train_x, batch_size=batch_size)
-    valid_ll = EinsumNetwork.eval_loglikelihood_batched(einet, valid_x, batch_size=batch_size)
-    test_ll = EinsumNetwork.eval_loglikelihood_batched(einet, test_x, batch_size=batch_size)
-    print("[{}]   train LL {}   valid LL {}   test LL {}".format(
-        epoch_count,
-        train_ll / train_N,
-        valid_ll / valid_N,
-        test_ll / test_N))
+    train_ll = EinsumNetwork.eval_loglikelihood_batched(
+        einet, train_x, batch_size=batch_size
+    )
+    valid_ll = EinsumNetwork.eval_loglikelihood_batched(
+        einet, valid_x, batch_size=batch_size
+    )
+    test_ll = EinsumNetwork.eval_loglikelihood_batched(
+        einet, test_x, batch_size=batch_size
+    )
+    print(
+        "[{}]   train LL {}   valid LL {}   test LL {}".format(
+            epoch_count, train_ll / train_N, valid_ll / valid_N, test_ll / test_N
+        )
+    )
     einet.train()
     #####
 
@@ -152,11 +163,11 @@ for epoch_count in range(num_epochs):
     einet.em_update()
 
 if fashion_mnist:
-    model_dir = '../models/einet/demo_fashion_mnist/'
-    samples_dir = '../samples/demo_fashion_mnist/'
+    model_dir = "../models/einet/demo_fashion_mnist/"
+    samples_dir = "../samples/demo_fashion_mnist/"
 else:
-    model_dir = '../models/einet/demo_mnist/'
-    samples_dir = '../samples/demo_mnist/'
+    model_dir = "../models/einet/demo_mnist/"
+    samples_dir = "../samples/demo_mnist/"
 utils.mkdir_p(model_dir)
 utils.mkdir_p(samples_dir)
 
@@ -166,12 +177,14 @@ utils.mkdir_p(samples_dir)
 
 samples = einet.sample(num_samples=25).cpu().numpy()
 samples = samples.reshape((-1, 28, 28))
-utils.save_image_stack(samples, 5, 5, os.path.join(samples_dir, "samples.png"), margin_gray_val=0.)
+utils.save_image_stack(
+    samples, 5, 5, os.path.join(samples_dir, "samples.png"), margin_gray_val=0.0
+)
 
 # Draw conditional samples for reconstruction
 image_scope = np.array(range(height * width)).reshape(height, width)
-marginalize_idx = list(image_scope[0:round(height/2), :].reshape(-1))
-keep_idx = [i for i in range(width*height) if i not in marginalize_idx]
+marginalize_idx = list(image_scope[0 : round(height / 2), :].reshape(-1))
+keep_idx = [i for i in range(width * height) if i not in marginalize_idx]
 einet.set_marginalization_idx(marginalize_idx)
 
 num_samples = 10
@@ -185,12 +198,24 @@ samples /= num_samples
 samples = samples.squeeze()
 
 samples = samples.reshape((-1, 28, 28))
-utils.save_image_stack(samples, 5, 5, os.path.join(samples_dir, "sample_reconstruction.png"), margin_gray_val=0.)
+utils.save_image_stack(
+    samples,
+    5,
+    5,
+    os.path.join(samples_dir, "sample_reconstruction.png"),
+    margin_gray_val=0.0,
+)
 
 # ground truth
 ground_truth = test_x[0:25, :].cpu().numpy()
 ground_truth = ground_truth.reshape((-1, 28, 28))
-utils.save_image_stack(ground_truth, 5, 5, os.path.join(samples_dir, "ground_truth.png"), margin_gray_val=0.)
+utils.save_image_stack(
+    ground_truth,
+    5,
+    5,
+    os.path.join(samples_dir, "ground_truth.png"),
+    margin_gray_val=0.0,
+)
 
 ###############################
 # perform mpe reconstructions #
@@ -198,21 +223,29 @@ utils.save_image_stack(ground_truth, 5, 5, os.path.join(samples_dir, "ground_tru
 
 mpe = einet.mpe().cpu().numpy()
 mpe = mpe.reshape((1, 28, 28))
-utils.save_image_stack(mpe, 1, 1, os.path.join(samples_dir, "mpe.png"), margin_gray_val=0.)
+utils.save_image_stack(
+    mpe, 1, 1, os.path.join(samples_dir, "mpe.png"), margin_gray_val=0.0
+)
 
 # Draw conditional samples for reconstruction
 image_scope = np.array(range(height * width)).reshape(height, width)
-marginalize_idx = list(image_scope[0:round(height/2), :].reshape(-1))
-keep_idx = [i for i in range(width*height) if i not in marginalize_idx]
+marginalize_idx = list(image_scope[0 : round(height / 2), :].reshape(-1))
+keep_idx = [i for i in range(width * height) if i not in marginalize_idx]
 einet.set_marginalization_idx(marginalize_idx)
 
 mpe_reconstruction = einet.mpe(x=test_x[0:25, :]).cpu().numpy()
 mpe_reconstruction = mpe_reconstruction.squeeze()
 mpe_reconstruction = mpe_reconstruction.reshape((-1, 28, 28))
-utils.save_image_stack(mpe_reconstruction, 5, 5, os.path.join(samples_dir, "mpe_reconstruction.png"), margin_gray_val=0.)
+utils.save_image_stack(
+    mpe_reconstruction,
+    5,
+    5,
+    os.path.join(samples_dir, "mpe_reconstruction.png"),
+    margin_gray_val=0.0,
+)
 
 print()
-print('Saved samples to {}'.format(samples_dir))
+print("Saved samples to {}".format(samples_dir))
 
 ####################
 # save and re-load #
@@ -220,13 +253,19 @@ print('Saved samples to {}'.format(samples_dir))
 
 # evaluate log-likelihoods
 einet.eval()
-train_ll_before = EinsumNetwork.eval_loglikelihood_batched(einet, train_x, batch_size=batch_size)
-valid_ll_before = EinsumNetwork.eval_loglikelihood_batched(einet, valid_x, batch_size=batch_size)
-test_ll_before = EinsumNetwork.eval_loglikelihood_batched(einet, test_x, batch_size=batch_size)
+train_ll_before = EinsumNetwork.eval_loglikelihood_batched(
+    einet, train_x, batch_size=batch_size
+)
+valid_ll_before = EinsumNetwork.eval_loglikelihood_batched(
+    einet, valid_x, batch_size=batch_size
+)
+test_ll_before = EinsumNetwork.eval_loglikelihood_batched(
+    einet, test_x, batch_size=batch_size
+)
 
 # save model
 graph_file = os.path.join(model_dir, "einet.pc")
-#Graph.write_gpickle(graph, graph_file)
+# Graph.write_gpickle(graph, graph_file)
 print("Saved PC graph to {}".format(graph_file))
 model_file = os.path.join(model_dir, "einet.mdl")
 torch.save(einet, model_file)
@@ -239,15 +278,21 @@ einet = torch.load(model_file)
 print("Loaded model from {}".format(model_file))
 
 # evaluate log-likelihoods on re-loaded model
-train_ll = EinsumNetwork.eval_loglikelihood_batched(einet, train_x, batch_size=batch_size)
-valid_ll = EinsumNetwork.eval_loglikelihood_batched(einet, valid_x, batch_size=batch_size)
+train_ll = EinsumNetwork.eval_loglikelihood_batched(
+    einet, train_x, batch_size=batch_size
+)
+valid_ll = EinsumNetwork.eval_loglikelihood_batched(
+    einet, valid_x, batch_size=batch_size
+)
 test_ll = EinsumNetwork.eval_loglikelihood_batched(einet, test_x, batch_size=batch_size)
 print()
-print("Log-likelihoods before saving --- train LL {}   valid LL {}   test LL {}".format(
-        train_ll / train_N,
-        valid_ll / valid_N,
-        test_ll / test_N))
-print("Log-likelihoods after saving  --- train LL {}   valid LL {}   test LL {}".format(
-        train_ll / train_N,
-        valid_ll / valid_N,
-        test_ll / test_N))
+print(
+    "Log-likelihoods before saving --- train LL {}   valid LL {}   test LL {}".format(
+        train_ll / train_N, valid_ll / valid_N, test_ll / test_N
+    )
+)
+print(
+    "Log-likelihoods after saving  --- train LL {}   valid LL {}   test LL {}".format(
+        train_ll / train_N, valid_ll / valid_N, test_ll / test_N
+    )
+)

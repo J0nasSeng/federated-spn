@@ -7,6 +7,7 @@ from vit_pytorch.simple_vit import Transformer, posemb_sincos_2d, pair, Rearrang
 from torch.nn import Linear, BatchNorm1d, ReLU
 import numpy as np
 
+
 def initialize_non_glu(module, input_dim, output_dim):
     gain_value = np.sqrt((input_dim + output_dim) / np.sqrt(4 * input_dim))
     torch.nn.init.xavier_normal_(module.weight, gain=gain_value)
@@ -19,6 +20,7 @@ def initialize_glu(module, input_dim, output_dim):
     torch.nn.init.xavier_normal_(module.weight, gain=gain_value)
     # torch.nn.init.zeros_(module.bias)
     return
+
 
 class TabNetNoEmbeddings(torch.nn.Module):
     def __init__(
@@ -84,22 +86,22 @@ class TabNetNoEmbeddings(torch.nn.Module):
         self.n_shared = n_shared
         self.virtual_batch_size = virtual_batch_size
         self.mask_type = mask_type
-        
+
         self.encoder = TabNetEncoder(
-                input_dim=input_dim,
-                output_dim=output_dim,
-                n_d=n_d,
-                n_a=n_a,
-                n_steps=n_steps,
-                gamma=gamma,
-                n_independent=n_independent,
-                n_shared=n_shared,
-                epsilon=epsilon,
-                virtual_batch_size=virtual_batch_size,
-                momentum=momentum,
-                mask_type=mask_type,
-                group_attention_matrix=group_attention_matrix
-            )
+            input_dim=input_dim,
+            output_dim=output_dim,
+            n_d=n_d,
+            n_a=n_a,
+            n_steps=n_steps,
+            gamma=gamma,
+            n_independent=n_independent,
+            n_shared=n_shared,
+            epsilon=epsilon,
+            virtual_batch_size=virtual_batch_size,
+            momentum=momentum,
+            mask_type=mask_type,
+            group_attention_matrix=group_attention_matrix,
+        )
         if self.is_multi_task:
             self.multi_task_mappings = torch.nn.ModuleList()
             for task_dim in output_dim:
@@ -115,14 +117,14 @@ class TabNetNoEmbeddings(torch.nn.Module):
         steps_output, M_loss = self.encoder(x)
         res = torch.sum(torch.stack(steps_output, dim=0), dim=0)
         return res, M_loss
-        #if self.is_multi_task:
+        # if self.is_multi_task:
         #    # Result will be in list format
         #    out = []
         #    for task_mapping in self.multi_task_mappings:
         #        out.append(task_mapping(res))
-        #else:
+        # else:
         #    out = self.final_mapping(res)
-        #return out
+        # return out
 
     def forward_masks(self, x):
         return self.encoder.forward_masks(x)
@@ -216,12 +218,16 @@ class TabNet(torch.nn.Module):
         self.embedders = nn.ModuleList()
         self.tabnets = nn.ModuleList()
         for i in range(num_clients):
-            group_attention_matrix = create_group_matrix(grouped_features[i], input_dims[i])
-            embedder = EmbeddingGenerator(input_dims[i],
-                                           cat_dims[i],
-                                           cat_idxs[i],
-                                           cat_emb_dim[i],
-                                           group_attention_matrix)
+            group_attention_matrix = create_group_matrix(
+                grouped_features[i], input_dims[i]
+            )
+            embedder = EmbeddingGenerator(
+                input_dims[i],
+                cat_dims[i],
+                cat_idxs[i],
+                cat_emb_dim[i],
+                group_attention_matrix,
+            )
             self.embedders.append(embedder)
             self.post_embed_dim = embedder.post_embed_dim
 
@@ -239,18 +245,18 @@ class TabNet(torch.nn.Module):
                 virtual_batch_size,
                 momentum,
                 mask_type,
-                group_attention_matrix
+                group_attention_matrix,
             )
             self.tabnets.append(tabnet)
         self.final_mapping = nn.Sequential(
             Linear(num_clients * n_d, int((num_clients * n_d) / 2)),
             nn.ReLU(),
-            nn.Linear(int((num_clients * n_d) / 2), output_dim)
+            nn.Linear(int((num_clients * n_d) / 2), output_dim),
         )
-        #initialize_non_glu(self.final_mapping, n_d, output_dim)
+        # initialize_non_glu(self.final_mapping, n_d, output_dim)
 
     def forward(self, x):
-        x_tabnet =  []
+        x_tabnet = []
         out = torch.zeros(x[0].shape[0], self.output_dim)
         M_l = 0.0
         for i, x_ in enumerate(x):
@@ -258,28 +264,43 @@ class TabNet(torch.nn.Module):
             x_, M_loss = self.tabnets[i](x_)
             M_l += M_loss / len(x)
             x_tabnet.append(x_)
-            #out += x_ / len(x)
-        #return out
+            # out += x_ / len(x)
+        # return out
         x_ = torch.column_stack(x_tabnet)
         return self.final_mapping(x_), M_l
 
     def forward_masks(self, x):
-        x_tabnet =  []
+        x_tabnet = []
         for i, x_ in enumerate(x):
             x_ = self.embedders[i](x_)
             x_ = self.tabnets[i].forward_masks(x_)
             x_tabnet.append(x_)
         x_ = torch.column_stack(x_tabnet)
         return x_
-    
+
 
 class SimpleViT(nn.Module):
-    def __init__(self, *, num_clients, image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, channels = 3, dim_head = 64):
+    def __init__(
+        self,
+        *,
+        num_clients,
+        image_size,
+        patch_size,
+        num_classes,
+        dim,
+        depth,
+        heads,
+        mlp_dim,
+        channels=3,
+        dim_head=64
+    ):
         super().__init__()
         image_height, image_width = pair(image_size)
         patch_height, patch_width = pair(patch_size)
 
-        assert image_height % patch_height == 0 and image_width % patch_width == 0, 'Image dimensions must be divisible by the patch size.'
+        assert (
+            image_height % patch_height == 0 and image_width % patch_width == 0
+        ), "Image dimensions must be divisible by the patch size."
 
         patch_dim = channels * patch_height * patch_width
 
@@ -291,17 +312,21 @@ class SimpleViT(nn.Module):
         for _ in range(num_classes):
 
             to_patch_embedding = nn.Sequential(
-                Rearrange("b c (h p1) (w p2) -> b (h w) (p1 p2 c)", p1 = patch_height, p2 = patch_width),
+                Rearrange(
+                    "b c (h p1) (w p2) -> b (h w) (p1 p2 c)",
+                    p1=patch_height,
+                    p2=patch_width,
+                ),
                 nn.LayerNorm(patch_dim),
                 nn.Linear(patch_dim, dim),
                 nn.LayerNorm(dim),
             )
 
             pos_embedding = posemb_sincos_2d(
-                h = image_height // patch_height,
-                w = image_width // patch_width,
-                dim = dim,
-            ) 
+                h=image_height // patch_height,
+                w=image_width // patch_width,
+                dim=dim,
+            )
 
             transformer = Transformer(dim, depth, heads, dim_head, mlp_dim)
 
@@ -313,7 +338,7 @@ class SimpleViT(nn.Module):
             self.pos_embeddings.append(pos_embedding)
             self.to_latents.append(to_latent)
 
-        self.linear_head = nn.Linear(dim*num_clients, num_classes)
+        self.linear_head = nn.Linear(dim * num_clients, num_classes)
 
     def forward_client_transformers(self, imgs):
         out = []
@@ -328,7 +353,7 @@ class SimpleViT(nn.Module):
             x += pos_embedding.to(device, dtype=x.dtype)
 
             x = transformer(x)
-            x = x.mean(dim = 1)
+            x = x.mean(dim=1)
 
             x = to_latent(x)
 

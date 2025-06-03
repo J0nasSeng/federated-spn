@@ -41,7 +41,9 @@ def dist_forward(distribution, x: torch.Tensor):
     return x
 
 
-def dist_mode(distribution: dist.Distribution, context: SamplingContext = None) -> torch.Tensor:
+def dist_mode(
+    distribution: dist.Distribution, context: SamplingContext = None
+) -> torch.Tensor:
     """
     Get the mode of a given distribution.
 
@@ -66,7 +68,9 @@ def dist_mode(distribution: dist.Distribution, context: SamplingContext = None) 
         mode[mode >= 0.5] = 1.0
         mode[mode < 0.5] = 0.0
         return mode.repeat(context.num_samples, 1, 1, 1, 1)
-    elif isinstance(distribution, dist.Binomial) or isinstance(distribution, CustomBinomial):
+    elif isinstance(distribution, dist.Binomial) or isinstance(
+        distribution, CustomBinomial
+    ):
         mode = distribution.probs.clone()
         total_count = distribution.total_count
         mode = torch.floor(mode * (total_count + 1))
@@ -79,7 +83,9 @@ def dist_mode(distribution: dist.Distribution, context: SamplingContext = None) 
         raise Exception(f"MPE not yet implemented for type {type(distribution)}")
 
 
-def dist_sample(distribution: dist.Distribution, context: SamplingContext = None) -> torch.Tensor:
+def dist_sample(
+    distribution: dist.Distribution, context: SamplingContext = None
+) -> torch.Tensor:
     """
     Sample n samples from a given distribution.
 
@@ -97,9 +103,15 @@ def dist_sample(distribution: dist.Distribution, context: SamplingContext = None
         from einet.distributions.normal import CustomNormal
 
         if type(distribution) == dist.Normal:
-            distribution = dist.Normal(loc=distribution.loc, scale=distribution.scale * context.temperature_leaves)
+            distribution = dist.Normal(
+                loc=distribution.loc,
+                scale=distribution.scale * context.temperature_leaves,
+            )
         elif type(distribution) == CustomNormal:
-            distribution = CustomNormal(mu=distribution.mu, sigma=distribution.sigma * context.temperature_leaves)
+            distribution = CustomNormal(
+                mu=distribution.mu,
+                sigma=distribution.sigma * context.temperature_leaves,
+            )
         samples = distribution.sample(sample_shape=(context.num_samples,))
 
     assert (
@@ -125,7 +137,9 @@ def dist_sample(distribution: dist.Distribution, context: SamplingContext = None
     # If parent index into out_channels are given
     if context.indices_out is not None:
         # Choose only specific samples for each feature/scope
-        samples = torch.gather(samples, dim=2, index=context.indices_out.unsqueeze(-1)).squeeze(-1)
+        samples = torch.gather(
+            samples, dim=2, index=context.indices_out.unsqueeze(-1)
+        ).squeeze(-1)
 
     return samples
 
@@ -167,7 +181,9 @@ class AbstractLeaf(AbstractLayer, ABC):
         self.out_shape = f"(N, {num_features}, {num_leaves})"
 
         # Marginalization constant
-        self.marginalization_constant = nn.Parameter(torch.zeros(1), requires_grad=False)
+        self.marginalization_constant = nn.Parameter(
+            torch.zeros(1), requires_grad=False
+        )
 
     def _apply_dropout(self, x: torch.Tensor) -> torch.Tensor:
         # Apply dropout sampled from a bernoulli during training (model.train() has been called)
@@ -178,7 +194,9 @@ class AbstractLeaf(AbstractLayer, ABC):
             x[dropout_indices] = 0.0
         return x
 
-    def _marginalize_input(self, x: torch.Tensor, marginalized_scopes: List[int]) -> torch.Tensor:
+    def _marginalize_input(
+        self, x: torch.Tensor, marginalized_scopes: List[int]
+    ) -> torch.Tensor:
         # Marginalize nans set by user
         if marginalized_scopes is not None:
 
@@ -205,11 +223,15 @@ class AbstractLeaf(AbstractLayer, ABC):
         return x
 
     @abstractmethod
-    def _get_base_distribution(self, context: SamplingContext = None) -> dist.Distribution:
+    def _get_base_distribution(
+        self, context: SamplingContext = None
+    ) -> dist.Distribution:
         """Get the underlying torch distribution."""
         pass
 
-    def sample(self, num_samples: int = None, context: SamplingContext = None) -> torch.Tensor:
+    def sample(
+        self, num_samples: int = None, context: SamplingContext = None
+    ) -> torch.Tensor:
         """
         Perform sampling, given indices from the parent layer that indicate which of the multiple representations
         for each input shall be used.

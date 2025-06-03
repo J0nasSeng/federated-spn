@@ -5,7 +5,9 @@ from typing import Any
 
 class OutOfBoundsException(Exception):
     def __init__(self, value, lower_bound, upper_bound):
-        super().__init__(f"Value {value} was not in bounds: [{lower_bound}, {upper_bound}).")
+        super().__init__(
+            f"Value {value} was not in bounds: [{lower_bound}, {upper_bound})."
+        )
 
 
 class InvalidTypeException(Exception):
@@ -65,7 +67,9 @@ def _check_type_numpy(value: Any, expected_type):
         if not isinstance(value, np.integer):
             raise InvalidTypeException(value, expected_type)
     else:
-        raise Exception(f"Unexpected data type, must be either int or float, but was {expected_type}")
+        raise Exception(
+            f"Unexpected data type, must be either int or float, but was {expected_type}"
+        )
 
 
 def _check_type_torch(value: torch.Tensor, expected_type):
@@ -80,10 +84,18 @@ def _check_type_torch(value: torch.Tensor, expected_type):
         if dtype.is_floating_point:
             raise InvalidTypeException(value, expected_type)
     else:
-        raise Exception(f"Unexpected data type, must be either int or float, but was {expected_type}")
+        raise Exception(
+            f"Unexpected data type, must be either int or float, but was {expected_type}"
+        )
 
 
-def check_valid(value: Any, expected_type, lower_bound=None, upper_bound=None, allow_none: bool = False):
+def check_valid(
+    value: Any,
+    expected_type,
+    lower_bound=None,
+    upper_bound=None,
+    allow_none: bool = False,
+):
     """
     Check if a value is of a certain type and in given bounds.
     """

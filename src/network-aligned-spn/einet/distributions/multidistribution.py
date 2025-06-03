@@ -88,7 +88,9 @@ class MultiDistributionLayer(AbstractLeaf):
 
         return lls
 
-    def sample(self, num_samples: int = None, context: SamplingContext = None) -> torch.Tensor:
+    def sample(
+        self, num_samples: int = None, context: SamplingContext = None
+    ) -> torch.Tensor:
 
         all_samples = []
         for (scope, dist) in zip(self.scopes, self.dists):
@@ -104,4 +106,6 @@ class MultiDistributionLayer(AbstractLeaf):
         return samples
 
     def _get_base_distribution(self) -> dist.Distribution:
-        raise NotImplementedError("MultiDistributionLayer does not implement _get_base_distribution.")
+        raise NotImplementedError(
+            "MultiDistributionLayer does not implement _get_base_distribution."
+        )

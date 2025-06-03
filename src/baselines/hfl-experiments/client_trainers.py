@@ -4,15 +4,17 @@ from torch.optim.lr_scheduler import ExponentialLR
 import torch
 from copy import deepcopy
 
-class TabNetFedAvgSerialClientTrainer(SGDSerialClientTrainer):
 
-    def __init__(self, model, args, cuda=False, device=None, logger=None, personal=False) -> None:
+class TabNetFedAvgSerialClientTrainer(SGDSerialClientTrainer):
+    def __init__(
+        self, model, args, cuda=False, device=None, logger=None, personal=False
+    ) -> None:
         super().__init__(model, args.num_clients, cuda, device, logger, personal)
         self.optimizer = Adam(self.model.parameters(), args.lr)
         self.lr_scheduler = ExponentialLR(self.optimizer, args.gamma)
 
-
     """Federated client with local SGD solver."""
+
     def train(self, model_parameters, train_loader):
         self.set_model(model_parameters)
         self._model.train()
@@ -26,7 +28,7 @@ class TabNetFedAvgSerialClientTrainer(SGDSerialClientTrainer):
 
                 output, M_loss = self.model(data)
                 loss = self.criterion(output, target)
-                loss = loss - 1e-3*M_loss
+                loss = loss - 1e-3 * M_loss
 
                 data_size += len(target)
 
@@ -37,10 +39,12 @@ class TabNetFedAvgSerialClientTrainer(SGDSerialClientTrainer):
                     self.lr_scheduler.step()
 
         return [self.model_parameters, data_size]
-    
-class TabNetFedProxSerialClientTrainer(SGDSerialClientTrainer):
 
-    def __init__(self, model, args, cuda=False, device=None, logger=None, personal=False) -> None:
+
+class TabNetFedProxSerialClientTrainer(SGDSerialClientTrainer):
+    def __init__(
+        self, model, args, cuda=False, device=None, logger=None, personal=False
+    ) -> None:
         super().__init__(model, args.num_clients, cuda, device, logger, personal)
 
     def setup_optim(self, epochs, batch_size, lr, mu):
@@ -61,7 +65,7 @@ class TabNetFedProxSerialClientTrainer(SGDSerialClientTrainer):
             model_parameters (torch.Tensor): serialized model parameters.
             train_loader (torch.utils.data.DataLoader): :class:`torch.utils.data.DataLoader` for this client.
             mu (float): parameter of FedProx.
-            
+
         """
         self.set_model(model_parameters)
         frz_model = deepcopy(self._model)
@@ -71,8 +75,7 @@ class TabNetFedProxSerialClientTrainer(SGDSerialClientTrainer):
             self._model.train()
             for data, target in train_loader:
                 if self.cuda:
-                    data, target = data.cuda(self.device), target.cuda(
-                        self.device)
+                    data, target = data.cuda(self.device), target.cuda(self.device)
 
                 preds, _ = self._model(data)
                 l1 = self.criterion(preds, target)
@@ -87,9 +90,12 @@ class TabNetFedProxSerialClientTrainer(SGDSerialClientTrainer):
                 self.optimizer.step()
 
         return [self.model_parameters]
-    
+
+
 class TabNetScaffoldSerialClientTrainer(SGDSerialClientTrainer):
-    def __init__(self, model, args, cuda=False, device=None, logger=None, personal=False) -> None:
+    def __init__(
+        self, model, args, cuda=False, device=None, logger=None, personal=False
+    ) -> None:
         super().__init__(model, args.num_clients, cuda, device, logger, personal)
 
     def setup_optim(self, epochs, batch_size, lr):
@@ -119,7 +125,7 @@ class TabNetScaffoldSerialClientTrainer(SGDSerialClientTrainer):
 
                 output, M_loss = self.model(data)
                 loss = self.criterion(output, target)
-                loss = loss - 1e-3*M_loss
+                loss = loss - 1e-3 * M_loss
 
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -130,8 +136,8 @@ class TabNetScaffoldSerialClientTrainer(SGDSerialClientTrainer):
                 for parameter in self._model.parameters():
                     layer_size = parameter.grad.numel()
                     shape = parameter.grad.shape
-                    #parameter.grad = parameter.grad - self.cs[id][idx:idx + layer_size].view(parameter.grad.shape) + global_c[idx:idx + layer_size].view(parameter.grad.shape)
-                    parameter.grad.data[:] = grad[idx:idx+layer_size].view(shape)[:]
+                    # parameter.grad = parameter.grad - self.cs[id][idx:idx + layer_size].view(parameter.grad.shape) + global_c[idx:idx + layer_size].view(parameter.grad.shape)
+                    parameter.grad.data[:] = grad[idx : idx + layer_size].view(shape)[:]
                     idx += layer_size
 
                 self.optimizer.step()

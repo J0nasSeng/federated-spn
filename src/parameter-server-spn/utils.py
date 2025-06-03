@@ -5,6 +5,7 @@ import errno
 from PIL import Image
 from numproto import proto_to_ndarray
 
+
 def mkdir_p(path):
     """Linux mkdir -p"""
     try:
@@ -24,7 +25,16 @@ def one_hot(x, K, dtype=torch.float):
         return ind
 
 
-def save_image_stack(samples, num_rows, num_columns, filename, margin=5, margin_gray_val=1., frame=0, frame_gray_val=0.0):
+def save_image_stack(
+    samples,
+    num_rows,
+    num_columns,
+    filename,
+    margin=5,
+    margin_gray_val=1.0,
+    frame=0,
+    frame_gray_val=0.0,
+):
     """Save image stack in a tiled image"""
 
     # for gray scale, convert to rgb
@@ -37,15 +47,27 @@ def save_image_stack(samples, num_rows, num_columns, filename, margin=5, margin_
     samples -= samples.min()
     samples /= samples.max()
 
-    img = margin_gray_val * np.ones((height*num_rows + (num_rows-1)*margin, width*num_columns + (num_columns-1)*margin, 3))
+    img = margin_gray_val * np.ones(
+        (
+            height * num_rows + (num_rows - 1) * margin,
+            width * num_columns + (num_columns - 1) * margin,
+            3,
+        )
+    )
     for h in range(num_rows):
         for w in range(num_columns):
-            img[h*(height+margin):h*(height+margin)+height, w*(width+margin):w*(width+margin)+width, :] = samples[h*num_columns + w, :]
+            img[
+                h * (height + margin) : h * (height + margin) + height,
+                w * (width + margin) : w * (width + margin) + width,
+                :,
+            ] = samples[h * num_columns + w, :]
 
-    framed_img = frame_gray_val * np.ones((img.shape[0] + 2*frame, img.shape[1] + 2*frame, 3))
-    framed_img[frame:(frame+img.shape[0]), frame:(frame+img.shape[1]), :] = img
+    framed_img = frame_gray_val * np.ones(
+        (img.shape[0] + 2 * frame, img.shape[1] + 2 * frame, 3)
+    )
+    framed_img[frame : (frame + img.shape[0]), frame : (frame + img.shape[1]), :] = img
 
-    img = Image.fromarray(np.round(framed_img * 255.).astype(np.uint8))
+    img = Image.fromarray(np.round(framed_img * 255.0).astype(np.uint8))
 
     img.save(filename)
 
@@ -57,13 +79,16 @@ def sample_matrix_categorical(p):
         rand = torch.rand((cp.shape[0], 1), device=cp.device)
         rand_idx = torch.sum(rand > cp, -1).long()
         return rand_idx
-    
+
+
 class ProtobufNumpyArray:
     """
-        Class needed to deserialize numpy-arrays coming from flower
+    Class needed to deserialize numpy-arrays coming from flower
     """
+
     def __init__(self, bytes) -> None:
         self.ndarray = bytes
+
 
 def flwr_params_to_numpy(params):
     meta_info = params.tensors[-1]
@@ -74,7 +99,7 @@ def flwr_params_to_numpy(params):
 
     meta_info = proto_to_ndarray(pnpa_meta)
     adj = proto_to_ndarray(pnpa_adj)
-    
+
     parameters = []
     for p in parameter_bytes:
         param_bytes = ProtobufNumpyArray(p)
@@ -82,9 +107,11 @@ def flwr_params_to_numpy(params):
 
     return parameters, adj, meta_info
 
+
 def get_data_by_cluster(clusters, cluster_n):
     data_idx = np.argwhere(clusters == cluster_n).flatten()
     return data_idx
+
 
 def get_data_loader_mean(loader):
     mean = None

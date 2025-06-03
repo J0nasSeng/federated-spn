@@ -9,6 +9,7 @@ from PIL import Image
 import os
 import errno
 
+
 def mkdir_p(path):
     """Linux mkdir -p"""
     try:
@@ -19,6 +20,7 @@ def mkdir_p(path):
         else:
             raise
 
+
 def one_hot(x, K, dtype=torch.float):
     """One hot encoding"""
     with torch.no_grad():
@@ -26,7 +28,17 @@ def one_hot(x, K, dtype=torch.float):
         ind.scatter_(-1, x.unsqueeze(-1), 1)
         return ind
 
-def save_image_stack(samples, num_rows, num_columns, filename, margin=5, margin_gray_val=1., frame=0, frame_gray_val=0.0):
+
+def save_image_stack(
+    samples,
+    num_rows,
+    num_columns,
+    filename,
+    margin=5,
+    margin_gray_val=1.0,
+    frame=0,
+    frame_gray_val=0.0,
+):
     """Save image stack in a tiled image"""
 
     # for gray scale, convert to rgb
@@ -39,17 +51,30 @@ def save_image_stack(samples, num_rows, num_columns, filename, margin=5, margin_
     samples -= samples.min()
     samples /= samples.max()
 
-    img = margin_gray_val * np.ones((height*num_rows + (num_rows-1)*margin, width*num_columns + (num_columns-1)*margin, 3))
+    img = margin_gray_val * np.ones(
+        (
+            height * num_rows + (num_rows - 1) * margin,
+            width * num_columns + (num_columns - 1) * margin,
+            3,
+        )
+    )
     for h in range(num_rows):
         for w in range(num_columns):
-            img[h*(height+margin):h*(height+margin)+height, w*(width+margin):w*(width+margin)+width, :] = samples[h*num_columns + w, :]
+            img[
+                h * (height + margin) : h * (height + margin) + height,
+                w * (width + margin) : w * (width + margin) + width,
+                :,
+            ] = samples[h * num_columns + w, :]
 
-    framed_img = frame_gray_val * np.ones((img.shape[0] + 2*frame, img.shape[1] + 2*frame, 3))
-    framed_img[frame:(frame+img.shape[0]), frame:(frame+img.shape[1]), :] = img
+    framed_img = frame_gray_val * np.ones(
+        (img.shape[0] + 2 * frame, img.shape[1] + 2 * frame, 3)
+    )
+    framed_img[frame : (frame + img.shape[0]), frame : (frame + img.shape[1]), :] = img
 
-    img = Image.fromarray(np.round(framed_img * 255.).astype(np.uint8))
+    img = Image.fromarray(np.round(framed_img * 255.0).astype(np.uint8))
 
     img.save(filename)
+
 
 def sample_matrix_categorical(p):
     """Sample many Categorical distributions represented as rows in a matrix."""
@@ -59,20 +84,22 @@ def sample_matrix_categorical(p):
         rand_idx = torch.sum(rand > cp, -1).long()
         return rand_idx
 
+
 def extract_image_patches(x, size=4, stride=4):
     # x has shape [b, 3, h, w]
     patches = x.unfold(2, size, stride).unfold(3, size, stride)
     return patches
 
+
 def patch_and_cluster_imagenet(root_clusters, imagenet_path, num_clusters=1000):
     """
-        for each pre-computed cluster (can also be the labels), create 4x4 patches of each
-        image. Then cluster images along the patch-dimension, i.e. we group images which have similar
-        patches for each patch position.
-        For each patch (we simply count them), store a dictionary mapping cluster-id to 
-        the corresponding image ids and cluster means from that specific cluster.
-        In the end we thus know which image-patch belongs to which cluster and can compare the
-        cluster similarity to construct the Einsum structure.
+    for each pre-computed cluster (can also be the labels), create 4x4 patches of each
+    image. Then cluster images along the patch-dimension, i.e. we group images which have similar
+    patches for each patch position.
+    For each patch (we simply count them), store a dictionary mapping cluster-id to
+    the corresponding image ids and cluster means from that specific cluster.
+    In the end we thus know which image-patch belongs to which cluster and can compare the
+    cluster similarity to construct the Einsum structure.
     """
     transform = ViT_L_16_Weights.DEFAULT.transforms()
     imagenet = ImageNet(imagenet_path, transform=transform)
@@ -89,7 +116,7 @@ def patch_and_cluster_imagenet(root_clusters, imagenet_path, num_clusters=1000):
         for p in range(patches.shape[2]):
             patch_clusters[p] = {}
             # get p-th patch of all images and reshape to [B, C x P x S x S]
-            # where B = number of images, C channels, P number of patches and S patch size 
+            # where B = number of images, C channels, P number of patches and S patch size
             p_th_patches = patches[:, :, p].reshape((patches.shape[0], -1))
 
             # apply kmeans
@@ -104,12 +131,13 @@ def patch_and_cluster_imagenet(root_clusters, imagenet_path, num_clusters=1000):
         patch_clusters_of_clusters.append(patch_clusters)
     return patch_clusters_of_clusters
 
+
 def compare_patch_clusters(cluster_patch_clusters):
     """
-        given a patch-cluster dict for each root cluster, compare the
-        patch-clusters based on eucledian distance.
-        Group similar clusters together -> will be the clusters connected via 
-        a product node in SPN later on as similar clusters reduce heterogeinity.
+    given a patch-cluster dict for each root cluster, compare the
+    patch-clusters based on eucledian distance.
+    Group similar clusters together -> will be the clusters connected via
+    a product node in SPN later on as similar clusters reduce heterogeinity.
     """
     for patch_clusters in cluster_patch_clusters:
 
@@ -117,42 +145,59 @@ def compare_patch_clusters(cluster_patch_clusters):
         for p, clsts in patch_clusters.items():
             cluster_means = [cm for _, cm in clsts.values()]
             patch_clsts.append(cluster_means)
-        
+
         # TODO: group clusters of patches s.t. similar clusters get in one group
+
 
 def get_surrounding_patches(patches, i, j, device):
     """
-        Given the patches of an image batch, return the surrounding patches of
-        patch (i, j). If there is no patch (i.e. i=1 and/or j=1), return 0 instead.
+    Given the patches of an image batch, return the surrounding patches of
+    patch (i, j). If there is no patch (i.e. i=1 and/or j=1), return 0 instead.
     """
 
     patch_shape = patches[:, :, i, j].shape
     if (i - 1) == 0 and (j - 1) == 0:
         x_prev = [torch.zeros(patch_shape).to(device) for _ in range(3)]
     elif (i - 1) == 0 and (j - 1) > 0:
-        x_prev = [torch.zeros(patch_shape).to(device), patches[:, :, i, j-1], torch.zeros(patch_shape).to(device)]
+        x_prev = [
+            torch.zeros(patch_shape).to(device),
+            patches[:, :, i, j - 1],
+            torch.zeros(patch_shape).to(device),
+        ]
     elif (i - 1) > 0 and (j - 1) > 0:
-        x_prev = [patches[:, :, i-1, j], torch.zeros(patch_shape).to(device), torch.zeros(patch_shape).to(device)]
+        x_prev = [
+            patches[:, :, i - 1, j],
+            torch.zeros(patch_shape).to(device),
+            torch.zeros(patch_shape).to(device),
+        ]
     else:
-        x_prev = [patches[:, :, i-1, j], patches[:, :, i, j-1], patches[:, :, i-1, j-1]]
+        x_prev = [
+            patches[:, :, i - 1, j],
+            patches[:, :, i, j - 1],
+            patches[:, :, i - 1, j - 1],
+        ]
     return x_prev
+
 
 def set_einet_weights(einet, weights):
     """
-        Given an Einet and the predicted parameters of a NN, set the 
-        parameter of the Einet accordingly.
+    Given an Einet and the predicted parameters of a NN, set the
+    parameter of the Einet accordingly.
     """
     for w, p in zip(weights, einet.parameters()):
         assert w.shape == p.shape
         p.data = w
     return einet
 
+
 def softmax_temp(x, t=1.0, dim=1):
     ex = torch.exp(x / t)
     s = torch.sum(ex, dim=dim).unsqueeze(1)
     return ex / s
 
+
 import torch
+
 
 def rgb_to_ycocg(rgb: torch.Tensor) -> torch.Tensor:
     """
@@ -166,13 +211,12 @@ def rgb_to_ycocg(rgb: torch.Tensor) -> torch.Tensor:
     if rgb.max() > 1:
         rgb = rgb / 255.0
 
-
     # Conversion matrix for RGB to YCoCg
-    transformation_matrix = torch.tensor([
-        [0.25,  0.5,  0.25],   # Y
-        [0.5,   0.0, -0.5],    # Co
-        [-0.25, 0.5, -0.25]    # Cg
-    ], dtype=rgb.dtype, device=rgb.device)
+    transformation_matrix = torch.tensor(
+        [[0.25, 0.5, 0.25], [0.5, 0.0, -0.5], [-0.25, 0.5, -0.25]],  # Y  # Co  # Cg
+        dtype=rgb.dtype,
+        device=rgb.device,
+    )
 
     # Reshape RGB channels to apply the matrix
     rgb = rgb.permute(0, 2, 3, 1)  # Change to (N, H, W, C)

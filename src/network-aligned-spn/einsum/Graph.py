@@ -16,6 +16,7 @@ class EiNetAddress:
 
     EiNetAddress stores the "address" of the implementation in the EinsumNetwork.
     """
+
     def __init__(self, layer=None, idx=None, replica_idx=None):
         """
         :param layer: which layer implements this node?
@@ -37,6 +38,7 @@ class DistributionVector:
 
     To construct a PC, we simply use the DiGraph (directed graph) class of networkx.
     """
+
     # we assign each object a unique id.
     _id_counter = count(0)
 
@@ -62,6 +64,7 @@ class Product:
 
     To construct a PC, we simply use the DiGraph (directed graph) class of networkx.
     """
+
     # we assign each object a unique id.
     _id_counter = count(0)
 
@@ -100,7 +103,9 @@ def check_graph(graph):
     :return: True/False (bool), string description
     """
 
-    contains_only_PC_nodes = all([type(n) == DistributionVector or type(n) == Product for n in graph.nodes()])
+    contains_only_PC_nodes = all(
+        [type(n) == DistributionVector or type(n) == Product for n in graph.nodes()]
+    )
 
     is_DAG = nx.is_directed_acyclic_graph(graph)
     is_connected = nx.is_connected(graph.to_undirected())
@@ -108,46 +113,62 @@ def check_graph(graph):
     sums = get_sums(graph)
     products = get_products(graph)
 
-    products_one_parents = all([len(list(graph.predecessors(p))) == 1 for p in products])
+    products_one_parents = all(
+        [len(list(graph.predecessors(p))) == 1 for p in products]
+    )
     products_two_children = all([len(list(graph.successors(p))) == 2 for p in products])
 
-    sum_to_products = all([all([type(p) == Product for p in graph.successors(s)]) for s in sums])
-    product_to_dist = all([all([type(s) == DistributionVector for s in graph.successors(p)]) for p in products])
+    sum_to_products = all(
+        [all([type(p) == Product for p in graph.successors(s)]) for s in sums]
+    )
+    product_to_dist = all(
+        [
+            all([type(s) == DistributionVector for s in graph.successors(p)])
+            for p in products
+        ]
+    )
     alternating = sum_to_products and product_to_dist
 
     proper_scope = all([len(n.scope) == len(set(n.scope)) for n in graph.nodes()])
     smooth = all([all([p.scope == s.scope for p in graph.successors(s)]) for s in sums])
-    decomposable = all([check_if_is_partition(p.scope, [s.scope for s in graph.successors(p)]) for p in products])
+    decomposable = all(
+        [
+            check_if_is_partition(p.scope, [s.scope for s in graph.successors(p)])
+            for p in products
+        ]
+    )
 
-    check_passed = contains_only_PC_nodes \
-                   and is_DAG \
-                   and is_connected \
-                   and products_one_parents \
-                   and products_two_children \
-                   and alternating \
-                   and proper_scope \
-                   and smooth \
-                   and decomposable
+    check_passed = (
+        contains_only_PC_nodes
+        and is_DAG
+        and is_connected
+        and products_one_parents
+        and products_two_children
+        and alternating
+        and proper_scope
+        and smooth
+        and decomposable
+    )
 
-    msg = ''
+    msg = ""
     if check_passed:
-        msg += 'Graph check passed.\n'
+        msg += "Graph check passed.\n"
     if not contains_only_PC_nodes:
-        msg += 'Graph does not only contain DistributionVector or Product nodes.\n'
+        msg += "Graph does not only contain DistributionVector or Product nodes.\n"
     if not is_connected:
-        msg += 'Graph not connected.\n'
+        msg += "Graph not connected.\n"
     if not products_one_parents:
-        msg += 'Products do not have exactly one parent.\n'
+        msg += "Products do not have exactly one parent.\n"
     if not products_two_children:
-        msg += 'Products do not have exactly two children.\n'
+        msg += "Products do not have exactly two children.\n"
     if not alternating:
-        msg += 'Graph not alternating.\n'
+        msg += "Graph not alternating.\n"
     if not proper_scope:
-        msg += 'Scope is not proper.\n'
+        msg += "Scope is not proper.\n"
     if not smooth:
-        msg += 'Graph is not smooth.\n'
+        msg += "Graph is not smooth.\n"
     if not decomposable:
-        msg += 'Graph is not decomposable.\n'
+        msg += "Graph is not decomposable.\n"
 
     return check_passed, msg.rstrip()
 
@@ -170,7 +191,9 @@ def get_leaves(graph):
 
 def get_distribution_nodes_by_scope(graph, scope):
     scope = tuple(sorted(scope))
-    return [n for n in graph.nodes if type(n) == DistributionVector and n.scope == scope]
+    return [
+        n for n in graph.nodes if type(n) == DistributionVector and n.scope == scope
+    ]
 
 
 def partition_on_node(graph, node, scope_partition):
@@ -199,7 +222,9 @@ def partition_on_node(graph, node, scope_partition):
     return product, product_children
 
 
-def randomly_partition_on_node(graph, node, num_parts=2, proportions=None, rand_state=None):
+def randomly_partition_on_node(
+    graph, node, num_parts=2, proportions=None, rand_state=None
+):
     """
     Calls partition_on_node with a random partition -- used for random binary trees (RAT-SPNs).
 
@@ -221,7 +246,11 @@ def randomly_partition_on_node(graph, node, num_parts=2, proportions=None, rand_
         proportions = np.ones(num_parts).astype(np.float64)
 
     if num_parts > len(node.scope):
-        raise AssertionError("Cannot split scope of length {} into {} parts.".format(len(node.scope), num_parts))
+        raise AssertionError(
+            "Cannot split scope of length {} into {} parts.".format(
+                len(node.scope), num_parts
+            )
+        )
 
     proportions /= proportions.sum()
     if rand_state is not None:
@@ -323,6 +352,7 @@ class HypercubeToScopeCache:
 
     This class just represents a cached mapping from hypercubes to their scopes.
     """
+
     def __init__(self):
         self._hyper_cube_to_scope = {}
 
@@ -466,12 +496,14 @@ def poon_domingos_structure(shape, delta, axes=None, max_split_depth=None):
         try:
             delta[c] = list(delta[c])
             if len(delta[c]) != len(axes):
-                raise AssertionError("Each delta must either be list of length len(axes), or numeric.")
+                raise AssertionError(
+                    "Each delta must either be list of length len(axes), or numeric."
+                )
         except TypeError:
             delta[c] = [float(delta[c])] * len(axes)
 
-    if any([dd < 1. for d in delta for dd in d]):
-        raise AssertionError('Any delta must be >= 1.0.')
+    if any([dd < 1.0 for d in delta for dd in d]):
+        raise AssertionError("Any delta must be >= 1.0.")
 
     sub_shape = tuple(s for c, s in enumerate(shape) if c in axes)
     global_cut_points = []
@@ -511,7 +543,11 @@ def poon_domingos_structure(shape, delta, axes=None, max_split_depth=None):
             if found_cut_on_level:
                 break
             for ac, axis in enumerate(axes):
-                cut_points = [c for c in cur_global_cut_points[ac] if hypercube[0][axis] < c < hypercube[1][axis]]
+                cut_points = [
+                    c
+                    for c in cur_global_cut_points[ac]
+                    if hypercube[0][axis] < c < hypercube[1][axis]
+                ]
                 if len(cut_points) > 0:
                     found_cut_on_level = True
 
@@ -541,10 +577,13 @@ def poon_domingos_structure(shape, delta, axes=None, max_split_depth=None):
 
     return graph
 
+
 def binary_tree_spn(shape):
-    assert len(shape) == 2, 'only supports 2d-inputs'
-    assert shape[0] == shape[1], 'only supports squared inputs'
-    assert int(np.log2(shape[0])) == np.log2(shape[0]), 'shape must be power of 2, e.g. 2, 4, 8, ...'
+    assert len(shape) == 2, "only supports 2d-inputs"
+    assert shape[0] == shape[1], "only supports squared inputs"
+    assert int(np.log2(shape[0])) == np.log2(
+        shape[0]
+    ), "shape must be power of 2, e.g. 2, 4, 8, ..."
 
     hypercube_to_scope = HypercubeToScopeCache()
     hypercube = ((0,) * len(shape), shape)
@@ -556,20 +595,24 @@ def binary_tree_spn(shape):
 
     def build_tree(graph, hypercubes, depth, axis):
         """
-            Build a binary tree SPN which has all leaf nodes in same layer.
-            This is currently required as the Einsum-network does not support sum/leaf nodes
-            in the same layer with different number of distributions specified. 
-            This, however is necessary for the federated implementation of SPNs as 
-            we have to concatenate the SPNs learned on different clients.
-            If we restrict the structure to binary trees with all leafs being on the same layer,
-            we circumevent this issue.
-            NOTE: This comes at some cost: The SPN's depth increases exponentially now as the input
-                size increases. Also, we only support squared input where the shape has to be 
-                a tuple of 2^x-terms, e.g. an MNIST image now must be of shape (2^5, 2^5) = (32, 32).
+        Build a binary tree SPN which has all leaf nodes in same layer.
+        This is currently required as the Einsum-network does not support sum/leaf nodes
+        in the same layer with different number of distributions specified.
+        This, however is necessary for the federated implementation of SPNs as
+        we have to concatenate the SPNs learned on different clients.
+        If we restrict the structure to binary trees with all leafs being on the same layer,
+        we circumevent this issue.
+        NOTE: This comes at some cost: The SPN's depth increases exponentially now as the input
+            size increases. Also, we only support squared input where the shape has to be
+            a tuple of 2^x-terms, e.g. an MNIST image now must be of shape (2^5, 2^5) = (32, 32).
         """
 
-        curr_leafs = [node for node in graph.nodes if len(list(graph.successors(node))) == 0]
-        assert len(curr_leafs) == len(hypercubes), 'Error. Leaf number different than scope number'
+        curr_leafs = [
+            node for node in graph.nodes if len(list(graph.successors(node))) == 0
+        ]
+        assert len(curr_leafs) == len(
+            hypercubes
+        ), "Error. Leaf number different than scope number"
 
         # compute hamming distance between vectors describing hypercube
         hypercube_lens = [sum([r[0] - l[0], r[1] - l[1]]) for l, r in hypercubes]
@@ -589,14 +632,19 @@ def binary_tree_spn(shape):
                 prod_right = Product(node.scope)
                 graph.add_edge(node, prod_left)
                 graph.add_edge(node, prod_right)
-                new_hypercubes += [hc, hc] # add same hypercube twice as we have two product nodes
+                new_hypercubes += [
+                    hc,
+                    hc,
+                ]  # add same hypercube twice as we have two product nodes
             new_ax = axis
         else:
             for node, hc in zip(curr_leafs, hypercubes):
                 pos = (hc[1][axis] + hc[0][axis]) / 2
                 hc_left, hc_right = cut_hypercube(hc, axis, int(pos))
                 new_hypercubes += [hc_left, hc_right]
-                s1, s2 = hypercube_to_scope(hc_left, shape), hypercube_to_scope(hc_right, shape)
+                s1, s2 = hypercube_to_scope(hc_left, shape), hypercube_to_scope(
+                    hc_right, shape
+                )
                 sol_left, sol_right = DistributionVector(s1), DistributionVector(s2)
                 sol_left.einet_address.replica_idx = 0
                 sol_right.einet_address.replica_idx = 0
@@ -604,11 +652,11 @@ def binary_tree_spn(shape):
                 graph.add_edge(node, sol_right)
             new_ax = (axis + 1) % 2
 
-        return build_tree(graph, new_hypercubes, depth+1, new_ax)
-    
+        return build_tree(graph, new_hypercubes, depth + 1, new_ax)
+
     graph = build_tree(graph, [hypercube], 0, 0)
-    return graph   
-    
+    return graph
+
 
 def topological_layers(graph):
     """
@@ -627,12 +675,22 @@ def topological_layers(graph):
     num_internal_nodes = len(sums) + len(products)
 
     while len(visited_nodes) != num_internal_nodes:
-        sum_layer = [s for s in sums if s not in visited_nodes and all([p in visited_nodes for p in graph.predecessors(s)])]
+        sum_layer = [
+            s
+            for s in sums
+            if s not in visited_nodes
+            and all([p in visited_nodes for p in graph.predecessors(s)])
+        ]
         sum_layer = sorted(sum_layer)
         layers.insert(0, sum_layer)
         visited_nodes.update(sum_layer)
 
-        product_layer = [p for p in products if p not in visited_nodes and all([s in visited_nodes for s in graph.predecessors(p)])]
+        product_layer = [
+            p
+            for p in products
+            if p not in visited_nodes
+            and all([s in visited_nodes for s in graph.predecessors(p)])
+        ]
         product_layer = sorted(product_layer)
         layers.insert(0, product_layer)
         visited_nodes.update(product_layer)
@@ -658,14 +716,16 @@ def plot_graph(graph):
     products = [n for n in graph.nodes if type(n) == Product]
     node_sizes = [3 + 10 * i for i in range(len(graph))]
 
-    nx.draw_networkx_nodes(graph, pos, distributions, node_shape='p')
-    nx.draw_networkx_nodes(graph, pos, products, node_shape='^')
-    nx.draw_networkx_edges(graph, pos, node_size=node_sizes, arrowstyle='->', arrowsize=10, width=2)
+    nx.draw_networkx_nodes(graph, pos, distributions, node_shape="p")
+    nx.draw_networkx_nodes(graph, pos, products, node_shape="^")
+    nx.draw_networkx_edges(
+        graph, pos, node_size=node_sizes, arrowstyle="->", arrowsize=10, width=2
+    )
     plt.show()
 
 
 # run to see some usage examples
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
 

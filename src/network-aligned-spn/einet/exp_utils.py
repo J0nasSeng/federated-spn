@@ -561,6 +561,7 @@ def setup_experiment(
         rtpt,
     )
 
+
 def setup_experiment(name: str, cfg: DictConfig, remove_if_exists: bool = False):
     """
     Sets up the experiment.
@@ -583,6 +584,7 @@ def setup_experiment(name: str, cfg: DictConfig, remove_if_exists: bool = False)
     seed_all_rng(cfg.seed)
     cudnn.benchmark = True
     return results_dir, cfg
+
 
 def anneal_tau(epoch, max_epochs):
     """Anneal the softmax temperature tau based on the epoch progress."""

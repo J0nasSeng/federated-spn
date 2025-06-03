@@ -1,5 +1,6 @@
 import torch.nn as nn
 
+
 class AlexNet(nn.Module):
     def __init__(self, num_classes=10, channels=3):
         super(AlexNet, self).__init__()
@@ -19,10 +20,10 @@ class AlexNet(nn.Module):
             nn.MaxPool2d(kernel_size=2),
         )
         self.classifier = nn.Sequential(
-            #nn.Dropout(),
+            # nn.Dropout(),
             nn.Linear(256 * 2 * 2, 4096),
             nn.ReLU(inplace=True),
-            #nn.Dropout(),
+            # nn.Dropout(),
             nn.Linear(4096, 4096),
             nn.ReLU(inplace=True),
             nn.Linear(4096, num_classes),

@@ -75,7 +75,7 @@ class Layer(torch.nn.Module):
         self.em_set_params(None, None)
 
     def em_purge(self):
-        """Discard accumulated EM statistics """
+        """Discard accumulated EM statistics"""
         raise NotImplementedError
 
     def em_process_batch(self):
