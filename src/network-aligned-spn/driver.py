@@ -17,10 +17,15 @@ from datasets.utils import (
     get_hybrid_train_data,
     make_data_loader,
 )
-from spn.structure.Base import Sum, Product, get_nodes_by_type
-from spn.algorithms.MPE import mpe
-from spn.algorithms.Inference import log_likelihood
-from spn.algorithms.EM import EM_optimization
+
+# from spn.structure.Base import Sum, Product, get_nodes_by_type
+# from spn.algorithms.MPE import mpe
+# from spn.algorithms.Inference import log_likelihood
+# from spn.algorithms.EM import EM_optimization
+
+from torch_spn.base import Sum, Product
+from torch_spn.inference import mpe, log_likelihood, EM_optimization, get_nodes_by_type
+
 from scipy.special import softmax
 from optim import add_node_em_update, cond_sum_em_update, EM_optimization_network
 from rtpt import RTPT
@@ -32,11 +37,12 @@ from sklearn.metrics import accuracy_score, f1_score
 import utils
 from spn_leaf import SPNLeaf, DensityLeaf
 from einsum.EinetMixture import EinetMixture
+from einsum.SumLayer import EinsumLayer
 import torch
-import torch.nn as nn
 import pandas as pd
 import os
 import context as ctxt
+
 
 warnings.filterwarnings("ignore")
 
@@ -108,11 +114,13 @@ class SPFlowServer:
         ds_len = [ray.get(node.get_dataset_len.remote()) for node in nodes]
         norm = sum(ds_len)
         weights = [d / norm for d in ds_len]
+
         spn = Sum(weights, leafs)
         spn.scope = []
         for c in spn.children:
             spn.scope = list(set(spn.scope).union(set(c.scope)))
         spn = utils.reassign_node_ids(spn)
+
         return spn
 
     def build_spn_verhyb_naive(self, feature_subspaces, nodes):
@@ -135,8 +143,8 @@ class SPFlowServer:
                     # this yields an array with exactly one SPN included
                     leafs.append(ray.get(nodes[c].get_spn.remote(tuple(subspace)))[0])
                 s.children = leafs
-                s.weights = np.repeat(1 / len(s.children), len(s.children))
-                s.scope = set().union(*[set(l.scope) for l in leafs])
+                s.weights = torch.ones(len(s.children)) / len(s.children)
+                s.scope = set().union(*[set(leaf.scope) for leaf in leafs])
                 spn.children += [s]
                 spn.scope = set().union(*[c.scope for c in spn.children])
                 added_nodes.append(s)

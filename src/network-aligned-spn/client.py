@@ -3,14 +3,18 @@
     It is implemented as a ray actor.
 """
 import ray
-
-# from einet.einet import Einet, EinetConfig
 from torch.utils.data import DataLoader, Subset
 from rtpt import RTPT
 import torch
-from spn.algorithms.LearningWrappers import learn_mspn
-from spn.structure.Base import Context, Sum
-from spn.algorithms.EM import EM_optimization
+
+# from spn.algorithms.LearningWrappers import learn_mspn
+# from spn.structure.Base import Context, Sum
+# from spn.algorithms.EM import EM_optimization
+
+from torch_spn.base import Sum, Product, SPNNode, CategoricalLeaf, GaussianLeaf
+from torch_spn.learning import learn_mspn, Context
+from torch_spn.inference import EM_optimization, log_likelihood
+
 import context
 import utils
 from einet.einet import Einet, EinetConfig
@@ -20,13 +24,13 @@ from einsum.Graph import random_binary_trees
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
-from spn.algorithms.Inference import log_likelihood
 import normflows as nf
 import torchvision as tv
 from torchvision.transforms.functional import crop
 from det.tree import DensityTree
 import time
 import warnings
+
 
 warnings.filterwarnings("ignore")
 
@@ -417,18 +421,16 @@ class FlowNode:
                 for c in np.unique(clusters):
                     idx = np.argwhere(clusters == c).flatten()
                     subset = train_data[idx]
-                    node_types = utils.infer_node_type(subset, 15)
-                    types = [t for t, _ in node_types]
                     ctxt = Context(
                         meta_types=[context.ctxts[self.dataset][i] for i in subspace]
                     )
-                    # ctxt = Context(parametric_types=types)
                     ctxt.add_domains(subset)
                     spn = learn_mspn(
                         subset, ctxt, min_instances_slice=100, threshold=0.4
                     )
                     spn = utils.adjust_scope(spn, subspace)
                     cluster_spns.append(spn)
+
                 if self.setting == "horizontal" or self.glueing == "naive":
                     spn = self._build_cluster_mixture(cluster_spns, clusters)
                     self.spns[tuple(subspace)] = [spn]
@@ -439,6 +441,7 @@ class FlowNode:
                     meta_types=[context.ctxts[self.dataset][i] for i in subspace]
                 )
                 ctxt.add_domains(train_data)
+
                 spn = learn_mspn(
                     train_data, ctxt, min_instances_slice=50, threshold=0.4
                 )
@@ -453,7 +456,8 @@ class FlowNode:
                 idx = np.argwhere(train_data[:, -1].flatten() == l).flatten()
                 subset = train_data[idx]
                 spn = self._build_rat_spn(subspace, subset)
-                EM_optimization(spn, subset)
+                subset_tensor = torch.tensor(subset, dtype=torch.float32)
+                EM_optimization(spn, subset_tensor)
                 spn = utils.adjust_scope(spn, subspace)
                 cluster_spns.append(spn)
             spn = self._build_cluster_mixture(cluster_spns, train_data[:, -1].flatten())
@@ -467,7 +471,8 @@ class FlowNode:
                     idx = np.argwhere(clusters == c).flatten()
                     subset = train_data[idx]
                     spn = self._build_rat_spn(subspace, train_data)
-                    EM_optimization(spn, subset)
+                    subset_tensor = torch.tensor(subset, dtype=torch.float32)
+                    EM_optimization(spn, subset_tensor)
                     spn = utils.adjust_scope(spn, subspace)
                     cluster_spns.append(spn)
                 if self.setting == "horizontal" or self.glueing == "naive":
@@ -477,24 +482,27 @@ class FlowNode:
                     self.spns[tuple(subspace)] = cluster_spns
             else:
                 spn = self._build_rat_spn(subspace, train_data)
-                EM_optimization(spn, train_data)
+                train_data_tensor = torch.tensor(train_data, dtype=torch.float32)
+                EM_optimization(spn, train_data_tensor)
                 spn = utils.adjust_scope(spn, subspace)
                 self.spns[tuple(subspace)] = [spn]
 
     def _build_cluster_mixture(self, spns, clusters):
         assert len(spns) == len(np.unique(clusters))
-        root = Sum()
         weights = []
         scopes = []
         for s in spns:
             scopes += list(s.scope)
-        root.scope = list(set(scopes))
+
         for c in np.unique(clusters):
             w = np.argwhere(c == clusters).sum()
             weights.append(w)
-        root.weights = np.array(weights)
-        root.weights = root.weights / np.sum(root.weights)
-        root.children = spns
+
+        weights = np.array(weights, dtype=np.float32)
+        weights = weights / np.sum(weights)
+
+        root = Sum(weights, spns)
+        root.scope = list(set(scopes))
         root = utils.reassign_node_ids(root)
         return root
 
